@@ -11,6 +11,7 @@
 #include "../ocf_ctx_priv.h"
 #include "../mngt/ocf_mngt_common.h"
 #include "../metadata/metadata.h"
+#include "../ocf_queue_priv.h"
 
 #define SLEEP_TIME_MS (1000)
 
@@ -63,11 +64,6 @@ void ocf_cleaner_set_cmpl(ocf_cleaner_t cleaner, ocf_cleaner_end_t fn)
 	cleaner->end = fn;
 }
 
-void ocf_cleaner_set_io_queue(ocf_cleaner_t cleaner, uint32_t io_queue)
-{
-	cleaner->io_queue = io_queue;
-}
-
 void ocf_cleaner_set_priv(ocf_cleaner_t c, void *priv)
 {
 	OCF_CHECK_NULL(c);
@@ -112,9 +108,12 @@ static void ocf_cleaner_run_complete(ocf_cleaner_t cleaner, uint32_t interval)
 
 	env_rwsem_up_write(&cache->lock);
 	cleaner->end(cleaner, interval);
+
+	printk(KERN_ERR "cleaner queue id put %d\n", cleaner->io_queue->id);
+	ocf_queue_put(cleaner->io_queue);
 }
 
-void ocf_cleaner_run(ocf_cleaner_t cleaner)
+void ocf_cleaner_run(ocf_cleaner_t cleaner, ocf_queue_t queue)
 {
 	ocf_cache_t cache = ocf_cleaner_get_cache(cleaner);
 	ocf_cleaning_t clean_type;
@@ -143,6 +142,11 @@ void ocf_cleaner_run(ocf_cleaner_t cleaner)
 
 	ENV_BUG_ON(clean_type >= ocf_cleaning_max);
 
+	ocf_queue_get(queue);
+
+	cleaner->io_queue = queue;
+
+	printk(KERN_ERR "cleaner queue id get %d\n", cleaner->io_queue->id);
 	/* Call cleaning. */
 	if (cleaning_policy_ops[clean_type].perform_cleaning) {
 		cleaning_policy_ops[clean_type].perform_cleaning(cache,

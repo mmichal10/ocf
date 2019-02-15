@@ -193,6 +193,12 @@ static void _ocf_cleaner_complete_req(struct ocf_request *req)
 
 	OCF_DEBUG_MSG(req->cache, "All cleaning request completed");
 
+	printk(KERN_ERR "req completion\n");
+	printk(KERN_ERR "req type %d master ref counter %d\n",
+			(int)req->master_io_req_type, env_atomic_read(&req->master_remaining));
+	ocf_queue_put(master->io_queue);
+
+
 	/* Only master contains completion function and completion context */
 	cmpl = master->master_io_req;
 	cmpl(master->priv, master->error);

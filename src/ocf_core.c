@@ -273,9 +273,6 @@ static inline void dec_counter_if_req_was_dirty(struct ocf_core_io *core_io,
 
 static inline int ocf_core_validate_io(struct ocf_io *io)
 {
-	ocf_core_t core = ocf_volume_to_core(io->volume);
-	ocf_cache_t cache = ocf_core_get_cache(core);
-
 	if (!io->volume)
 		return -EINVAL;
 
@@ -294,7 +291,7 @@ static inline int ocf_core_validate_io(struct ocf_io *io)
 	if (io->dir != OCF_READ && io->dir != OCF_WRITE)
 		return -EINVAL;
 
-	if (io->io_queue >= cache->io_queues_no)
+	if (!io->io_queue)
 		return -EINVAL;
 
 	if (!io->end)
@@ -371,6 +368,8 @@ void ocf_core_submit_io_mode(struct ocf_io *io, ocf_cache_mode_t cache_mode)
 		io->end(io, -ENOMEM);
 		return;
 	}
+
+	ocf_queue_get(io->io_queue);
 
 	if (core_io->req->d2c)
 		req_cache_mode = ocf_req_cache_mode_d2c;
@@ -464,8 +463,10 @@ int ocf_core_submit_io_fast(struct ocf_io *io)
 		io->end(io, -ENOMEM);
 		return 0;
 	}
+	ocf_queue_get(io->io_queue);
 	if (req->d2c) {
 		dec_counter_if_req_was_dirty(core_io, cache);
+		printk(KERN_ERR "dc\n");
 		ocf_req_put(req);
 		return -EIO;
 	}
@@ -489,8 +490,8 @@ int ocf_core_submit_io_fast(struct ocf_io *io)
 
 	fast = ocf_engine_hndl_fast_req(req, req_cache_mode);
 	if (fast != OCF_FAST_PATH_NO) {
-		ocf_trace_push(cache, core_io->req->io_queue,
-				&trace_event, sizeof(trace_event));
+		ocf_trace_push(core_io->req->io_queue, &trace_event,
+				sizeof(trace_event));
 		ocf_seq_cutoff_update(core, req);
 		return 0;
 	}
@@ -498,6 +499,7 @@ int ocf_core_submit_io_fast(struct ocf_io *io)
 	dec_counter_if_req_was_dirty(core_io, cache);
 
 	ocf_io_put(io);
+	printk(KERN_ERR "not dc\n");
 	ocf_req_put(req);
 	return -EIO;
 }
@@ -653,7 +655,7 @@ static ctx_data_t *ocf_core_io_get_data(struct ocf_io *io)
 	return core_io->data;
 }
 
-const struct ocf_volume_properties ocf_core_volume_properties = { 
+const struct ocf_volume_properties ocf_core_volume_properties = {
 	.name = "OCF Core",
 	.io_priv_size = sizeof(struct ocf_core_io),
 	.volume_priv_size = sizeof(struct ocf_core_volume),

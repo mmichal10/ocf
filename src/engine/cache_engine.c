@@ -106,8 +106,7 @@ const struct ocf_io_if *ocf_get_io_if(ocf_req_cache_mode_t req_cache_mode)
 	return cache_mode_io_if_map[req_cache_mode];
 }
 
-struct ocf_request *ocf_engine_pop_req(struct ocf_cache *cache,
-		struct ocf_queue *q)
+struct ocf_request *ocf_engine_pop_req(ocf_cache_t cache, ocf_queue_t q)
 {
 	unsigned long lock_flags = 0;
 	struct ocf_request *req;
@@ -250,6 +249,7 @@ int ocf_engine_hndl_req(struct ocf_request *req,
 	if (!req->io_if)
 		return -EINVAL;
 
+	ocf_queue_get(req->io_queue);
 	/* Till OCF engine is not synchronous fully need to push OCF request
 	 * to into OCF workers
 	 */
@@ -263,6 +263,7 @@ int ocf_engine_hndl_fast_req(struct ocf_request *req,
 		ocf_req_cache_mode_t req_cache_mode)
 {
 	const struct ocf_io_if *io_if;
+	int ret;
 
 	io_if = ocf_get_io_if(req_cache_mode);
 	if (!io_if)
@@ -270,12 +271,21 @@ int ocf_engine_hndl_fast_req(struct ocf_request *req,
 
 	switch (req->rw) {
 	case OCF_READ:
-		return io_if->read(req);
+		ocf_queue_get(req->io_queue);
+		ret = io_if->read(req);
+		break;
 	case OCF_WRITE:
-		return io_if->write(req);
+		ocf_queue_get(req->io_queue);
+		ret = io_if->write(req);
+		break;
 	default:
 		return OCF_FAST_PATH_NO;
 	}
+
+	if (ret == OCF_FAST_PATH_NO)
+		ocf_queue_put(req->io_queue);
+
+	return ret;
 }
 
 static void ocf_engine_hndl_2dc_req(struct ocf_request *req)
@@ -309,6 +319,8 @@ void ocf_engine_hndl_ops_req(struct ocf_request *req)
 		req->io_if = &IO_IFS[OCF_IO_D2C_IF];
 	else
 		req->io_if = &IO_IFS[OCF_IO_OPS_IF];
+
+	ocf_queue_get(req->io_queue);
 
 	ocf_engine_push_req_back(req, true);
 }

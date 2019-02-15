@@ -279,6 +279,8 @@ void ocf_req_put(struct ocf_request *req)
 	if (env_atomic_dec_return(&req->ref_count))
 		return;
 
+	ocf_queue_put(req->io_queue);
+
 	OCF_DEBUG_TRACE(req->cache);
 
 	if (!req->d2c && !env_atomic_dec_return(

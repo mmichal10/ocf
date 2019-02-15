@@ -449,7 +449,7 @@ void cleaning_policy_alru_setup(struct ocf_cache *cache)
 	config->activity_threshold = OCF_ALRU_DEFAULT_ACTIVITY_THRESHOLD;
 }
 
-int cleaning_policy_alru_initialize(struct ocf_cache *cache, int init_metadata)
+int cleaning_policy_alru_initialize(ocf_cache_t cache, int init_metadata)
 {
 	struct ocf_user_part *part;
 	ocf_part_id_t part_id;
@@ -824,7 +824,6 @@ void cleaning_alru_perform_cleaning(ocf_cache_t cache, ocf_cleaner_end_t cmpl)
 	fctx->attribs.cmpl_fn = alru_clean;
 	fctx->attribs.cache_line_lock = true;
 	fctx->attribs.do_sort = true;
-	fctx->attribs.io_queue = cache->cleaner.io_queue;
 
 	fctx->clines_no = config->flush_max_buffers;
 	fctx->cache = cache;

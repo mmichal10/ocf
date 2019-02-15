@@ -487,7 +487,6 @@ static void _acp_flush(struct acp_context *acp)
 		.cmpl_fn = _acp_flush_end,
 		.cache_line_lock = false,
 		.do_sort = false,
-		.io_queue = cache->cleaner.io_queue,
 	};
 
 	ocf_cleaner_do_flush_data_async(cache, acp->flush.data,
@@ -536,7 +535,7 @@ static bool _acp_prepare_flush_data(struct acp_context *acp,
 
 /* Clean at most 'flush_max_buffers' cache lines from current or newly
  * selected chunk */
-void cleaning_policy_acp_perform_cleaning(struct ocf_cache *cache,
+void cleaning_policy_acp_perform_cleaning(ocf_cache_t cache,
 		ocf_cleaner_end_t cmpl)
 {
 	struct acp_cleaning_policy_config *config;
