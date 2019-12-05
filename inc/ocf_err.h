@@ -119,6 +119,9 @@ typedef enum {
 
 	/** Invalid cache name loaded*/
 	OCF_ERR_CACHE_NAME_MISMATCH,
+
+	/** Operation interrupted*/
+	OCF_ERR_INTERRUPT,
 } ocf_error_t;
 
 #endif /* __OCF_ERR_H__ */
