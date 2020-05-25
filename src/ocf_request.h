@@ -191,6 +191,9 @@ struct ocf_request {
 	uint8_t wi_second_pass : 1;
 	/*!< Set after first pass of WI write is completed */
 
+	uint8_t part_evict : 1;
+	/* !< Some cachelines from request's partition must be evicted */
+
 	log_sid_t sid;
 	/*!< Tracing sequence ID */
 
