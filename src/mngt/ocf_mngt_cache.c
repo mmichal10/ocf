@@ -172,7 +172,7 @@ static void __init_partitions(ocf_cache_t cache)
 
 	/* Init default Partition */
 	ENV_BUG_ON(ocf_mngt_add_partition_to_cache(cache, PARTITION_DEFAULT,
-			"unclassified", 0, PARTITION_SIZE_MAX,
+			"unclassified", 0, cache->conf_meta->cachelines,
 			OCF_IO_CLASS_PRIO_LOWEST, true));
 
 	/* Add other partition to the cache and make it as dummy */
@@ -184,7 +184,7 @@ static void __init_partitions(ocf_cache_t cache)
 
 		/* Init default Partition */
 		ENV_BUG_ON(ocf_mngt_add_partition_to_cache(cache, i_part,
-				"Inactive", 0, PARTITION_SIZE_MAX,
+				"Inactive", 0, cache->conf_meta->cachelines,
 				OCF_IO_CLASS_PRIO_LOWEST, false));
 	}
 }
