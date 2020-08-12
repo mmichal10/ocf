@@ -85,8 +85,8 @@ static int _ocf_mngt_set_partition_size(struct ocf_cache *cache,
 		return -OCF_ERR_INVAL;
 	}
 
-	if (max > PARTITION_SIZE_MAX)
-		max = PARTITION_SIZE_MAX;
+	if (max > cache->device->collision_table_entries)
+		max = cache->device->collision_table_entries;
 
 	part->config->min_size = min;
 	part->config->max_size = max;
