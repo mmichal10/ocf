@@ -37,6 +37,8 @@ static void __set_cache_line_invalid(struct ocf_cache *cache, uint8_t start_bit,
 		env_atomic_dec(&core->runtime_meta->cached_clines);
 		env_atomic_dec(&core->runtime_meta->
 				part_counters[part_id].cached_clines);
+		if (env_atomic_read(&cache->user_parts[part_id].runtime->valid_cnt) == 0)
+			printk(KERN_ERR "ERROR!!! valid counter below 0!!!\n");
 		env_atomic_dec(&cache->user_parts[part_id].runtime->valid_cnt);
 		env_atomic_dec(&core->runtime_meta->
 				part_counters[part_id].valid_cnt);
