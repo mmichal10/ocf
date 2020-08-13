@@ -79,12 +79,28 @@ static inline bool ocf_part_occ_is_limit_reached(struct ocf_request *req)
 	uint32_t max = req->cache->user_parts[req->part_id].config->max_size;
 	uint32_t curr_cached = env_atomic_read(
 				&cache->user_parts[req->part_id].runtime->valid_cnt);
-	uint32_t clines_available = max ? max - curr_cached : 0;
+	uint32_t clines_available;
 
-	if (clines_needed > clines_available)
-		return true;
-	else
-		return false;
+	/*
+	 * @mmichal10:
+	 * In case when curr_cached is greater than max, result in clines_available
+	 * overflows. I suspect that number of currently cached cachelines is updated
+	 * after IO is completed. Before completion of previous IO, another one migth
+	 * be submited. In this case `max - curr_cached` will always overflow and
+	 * `clines_needed > clines_available` would always be false
+	 */
+	if (curr_cached > max) {
+	//	return true;
+		printk(KERN_ERR "\n\n\n\n\nINVALID\n\nDATA\n\n\n\n\n");
+	}
+
+	clines_available = max ? max - curr_cached : 0;
+
+	printk(KERN_ERR "part id %hu max %u curr_cached %u\n", req->part_id, max, curr_cached);
+	printk(KERN_ERR "part id %hu cache line needed %u available %u\n",
+			req->part_id, clines_needed, clines_available);
+
+	return clines_needed > clines_available;
 }
 
 static inline ocf_cache_mode_t ocf_part_get_cache_mode(ocf_cache_t cache,
