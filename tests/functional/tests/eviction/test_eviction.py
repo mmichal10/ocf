@@ -19,6 +19,37 @@ from pyocf.utils import Size
 
 logger = logging.getLogger(__name__)
 
+@pytest.mark.parametrize("cls", CacheLineSize)
+@pytest.mark.parametrize("mode", [CacheMode.WT])
+def test_two_cores(pyocf_ctx, mode: CacheMode, cls: CacheLineSize):
+    """Test if eviction does not occur when IO greater than cache size is submitted.
+    """
+    cache_device = Volume(Size.from_MiB(20))
+
+    core_device1 = Volume(Size.from_MiB(40))
+    core_device2 = Volume(Size.from_MiB(40))
+    cache = Cache.start_on_device(cache_device, cache_mode=mode,
+                                  cache_line_size=cls)
+    cache_size = cache.get_stats()['conf']['size']
+    core_exported1 = Core.using_device(core_device1, name="core1")
+    core_exported2 = Core.using_device(core_device2, name="core2")
+    cache.add_core(core_exported1)
+    cache.add_core(core_exported2)
+    cache.set_seq_cut_off_policy(SeqCutOffPolicy.NEVER)
+    import pdb
+
+    valid_io_size = Size.from_B(cache_size.B)
+    test_data = Data(valid_io_size)
+    send_io(core_exported1, test_data)
+    send_io(core_exported2, test_data)
+
+    stats1 = core_exported1.get_stats()
+    stats2 = core_exported2.get_stats()
+    # IO to the second core should evict all the data from the first core
+    assert stats1['usage']['occupancy']['value'] == 0
+    assert stats2['usage']['occupancy']['value'] == valid_io_size
+    pdb.set_trace()
+
 
 @pytest.mark.parametrize("cls", CacheLineSize)
 @pytest.mark.parametrize("mode", [CacheMode.WT, CacheMode.WB, CacheMode.WO])
