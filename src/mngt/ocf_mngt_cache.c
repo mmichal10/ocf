@@ -1708,7 +1708,6 @@ static void ocf_mngt_cache_stop_put_io_queues(ocf_pipeline_t pipeline,
 	ocf_cache_t cache = context->cache;
 
 	_ocf_mngt_cache_put_io_queues(cache);
-	env_spinlock_destroy(&cache->io_queues_list_lock);
 
 	ocf_pipeline_next(pipeline);
 }
