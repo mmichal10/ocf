@@ -194,7 +194,7 @@ static void remove_lru_list_nobalance(ocf_cache_t cache,
 	node->hot = false;
 }
 
-static void remove_lru_list(ocf_cache_t cache, struct ocf_lru_list *list,
+void remove_lru_list(ocf_cache_t cache, struct ocf_lru_list *list,
 		ocf_cache_line_t cline)
 {
 	remove_lru_list_nobalance(cache, list, cline);
@@ -221,7 +221,7 @@ void ocf_lru_init_cline(ocf_cache_t cache, ocf_cache_line_t cline)
 	node->next = end_marker;
 }
 
-static struct ocf_lru_list *ocf_lru_get_list(struct ocf_part *part,
+struct ocf_lru_list *ocf_lru_get_list(struct ocf_part *part,
 		uint32_t lru_idx, bool clean)
 {
 	if (part->id == PARTITION_FREELIST)
