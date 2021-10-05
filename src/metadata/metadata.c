@@ -2045,6 +2045,159 @@ void ocf_metadata_probe_cores(ocf_ctx_t ctx, ocf_volume_t volume,
 			ocf_metadata_probe_cores_end, context);
 }
 
+static inline void _reset_cline(ocf_cache_t cache, ocf_cache_line_t cline)
+{
+	/* The cacheline used to be dirty but it is not anymore so it needs to be
+	   moved to a clean lru list */
+	ocf_lru_clean_cline(cache, &cache->user_parts[PARTITION_DEFAULT].part,
+			cline);
+
+	ocf_lru_rm_cline(cache, cline);
+	ocf_metadata_set_partition_id(cache, cline, PARTITION_FREELIST);
+	ocf_cleaning_init_cache_block(cache, cline);
+}
+
+static inline void remove_from_freelist(ocf_cache_t cache,
+		ocf_cache_line_t cline)
+{
+	ocf_part_id_t lru_list;
+	struct ocf_lru_list *list;
+
+	lru_list = (cline % OCF_NUM_LRU_LISTS);
+	list = ocf_lru_get_list(&cache->free, lru_list, true);
+	remove_lru_list(cache, list, cline);
+}
+
+static inline void remove_from_default(ocf_cache_t cache,
+		ocf_cache_line_t cline)
+{
+	ocf_part_id_t part_id = PARTITION_DEFAULT;
+	ocf_part_id_t lru_list;
+	struct ocf_lru_list *list;
+
+	lru_list = (cline % OCF_NUM_LRU_LISTS);
+	list = ocf_lru_get_list(&cache->user_parts[part_id].part, lru_list, false);
+	remove_lru_list(cache, list, cline);
+	env_atomic_dec(&cache->user_parts[part_id].part.runtime->curr_size);
+
+}
+
+static void handle_previously_invalid(ocf_cache_t cache,
+		ocf_cache_line_t cline)
+{
+	ocf_core_id_t core_id;
+	uint64_t core_line;
+
+	ocf_metadata_get_core_info(cache, cline, &core_id, &core_line);
+
+	if (metadata_test_dirty(cache, cline) && core_id < OCF_CORE_MAX) {
+		ENV_BUG_ON(!metadata_test_valid_any(cache, cline));
+		/* Moving cline from the freelist to the default partitioin */
+		remove_from_freelist(cache, cline);
+
+		cline_rebuild_metadata(cache, core_id, core_line, cline);
+	} else {
+		/* Cline stays on the freelist*/
+
+		/* To prevent random values in the metadata fill it with the defaults */
+		metadata_init_status_bits(cache, cline);
+		ocf_metadata_set_core_info(cache, cline, OCF_CORE_MAX, ULLONG_MAX);
+	}
+}
+
+static void handle_previously_valid(ocf_cache_t cache,
+		ocf_cache_line_t cline)
+{
+	ocf_core_id_t core_id;
+	uint64_t core_line;
+
+	ocf_metadata_get_core_info(cache, cline, &core_id, &core_line);
+
+	if (metadata_test_dirty(cache, cline) && core_id < OCF_CORE_MAX) {
+		/* Cline stays on the default partition*/
+		ENV_BUG_ON(!metadata_test_valid_any(cache, cline));
+
+		remove_from_default(cache, cline);
+		cline_rebuild_metadata(cache, core_id, core_line, cline);
+	} else {
+		/* Moving cline from the default partition to the freelist */
+
+		_reset_cline(cache, cline);
+	}
+}
+
+static inline void update_list_segment(ocf_cache_t cache,
+		ocf_cache_line_t begin, ocf_cache_line_t end)
+{
+	ocf_cache_line_t cline;
+
+	/* The last page of collision section may contain fewer entries than
+	   entries_in_page */
+	end = OCF_MIN(end, ocf_metadata_collision_table_entries(cache));
+
+	for (cline = begin; cline < end; cline++) {
+		ocf_part_id_t part_id;
+
+		metadata_clear_dirty_if_invalid(cache, cline);
+		metadata_clear_valid_if_clean(cache, cline);
+
+		part_id = ocf_metadata_get_partition_id(cache, cline);
+		switch (part_id) {
+			case PARTITION_FREELIST:
+				handle_previously_invalid(cache, cline);
+				break;
+			case PARTITION_DEFAULT:
+				handle_previously_valid(cache, cline);
+				break;
+			default:
+				ocf_cache_log(cache, log_crit, "Passive update: invalid "
+						"part id for cacheline %u: %hu\n", cline, part_id);
+				ENV_BUG();
+				break;
+		}
+	}
+}
+
+static void _dec_core_stats(ocf_core_t core)
+{
+	ocf_part_id_t part = PARTITION_DEFAULT;
+
+	ENV_BUG_ON(env_atomic_dec_return(&core->runtime_meta->cached_clines) < 0);
+	ENV_BUG_ON(env_atomic_dec_return(
+				&core->runtime_meta->part_counters[part].cached_clines) < 0);
+
+	ENV_BUG_ON(env_atomic_dec_return(&core->runtime_meta->dirty_clines) < 0);
+	ENV_BUG_ON(env_atomic_dec_return(
+				&core->runtime_meta->part_counters[part].dirty_clines) < 0);
+}
+
+static void cleanup_old_mapping(ocf_cache_t cache, ocf_cache_line_t begin,
+		ocf_cache_line_t end)
+{
+	ocf_cache_line_t cline;
+
+	/* The last page of collision section may contain fewer entries than
+	   entries_in_page */
+	end = OCF_MIN(end, ocf_metadata_collision_table_entries(cache));
+
+	for (cline = begin; cline < end; cline++) {
+		ocf_core_id_t core_id;
+		ocf_core_t core;
+
+		core_id = ocf_metadata_get_core_id(cache, cline);
+
+		ENV_BUG_ON(core_id > OCF_CORE_ID_INVALID);
+
+		core = ocf_cache_get_core(cache, core_id);
+		if (!core)
+			continue;
+
+		_dec_core_stats(core);
+
+		ocf_metadata_remove_from_collision(cache, cline, PARTITION_DEFAULT);
+	}
+}
+
 int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 {
 	struct ocf_metadata_ctrl *ctrl = cache->metadata.priv;
@@ -2073,6 +2226,7 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 	}
 
 	for (i = 0; i < ARRAY_SIZE(update_segments); i++) {
+		ocf_cache_line_t cache_line_range_end, cache_line_range_start;
 		enum ocf_metadata_segment_id seg = update_segments[i];
 		struct ocf_metadata_raw *raw = &(ctrl->raw_desc[seg]);
 		uint64_t raw_start_page = raw->ssd_pages_offset;
@@ -2080,14 +2234,37 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		uint64_t overlap_start = OCF_MAX(io_start_page, raw_start_page);
 		uint64_t overlap_end = OCF_MIN(io_end_page, raw_end_page);
 		uint64_t overlap_start_data = overlap_start - io_start_page;
+		uint64_t overlap_page;
+		uint64_t overlap_count;
 
-		if (overlap_start < overlap_end) {
-			ctx_data_seek(cache->owner, data, ctx_data_seek_begin,
-					PAGES_TO_BYTES(overlap_start_data));
-			ocf_metadata_raw_update(cache, raw, data,
-					overlap_start - raw_start_page,
-					overlap_end - overlap_start);
+		if (overlap_start >= overlap_end)
+			continue;
+
+		overlap_page = overlap_start - raw_start_page;
+		overlap_count = overlap_end - overlap_start;
+
+		if (seg == metadata_segment_collision) {
+			/* The collision is not updated yet but the range of affected
+			   cachelines is already known. Remove the old mapping related info
+			   from the metadata */
+			/* The range of cachelines with updated collision section */
+			cache_line_range_start = overlap_page * raw->entries_in_page;
+			cache_line_range_end = cache_line_range_start +
+				raw->entries_in_page * overlap_count;
+
+			cleanup_old_mapping(cache, cache_line_range_start,
+					cache_line_range_end);
 		}
+
+		ctx_data_seek(cache->owner, data, ctx_data_seek_begin,
+				PAGES_TO_BYTES(overlap_start_data));
+		ocf_metadata_raw_update(cache, raw, data, overlap_page, overlap_count);
+
+		if (seg != metadata_segment_collision)
+			continue;
+
+		update_list_segment(cache, cache_line_range_start,
+				cache_line_range_end);
 	}
 
 	return 0;
