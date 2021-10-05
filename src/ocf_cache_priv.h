@@ -164,7 +164,7 @@ static inline uint64_t ocf_get_cache_occupancy(ocf_cache_t cache)
 	ocf_core_t core;
 	ocf_core_id_t core_id;
 
-	for_each_core(cache, core, core_id)
+	for_each_core_all(cache, core, core_id)
 		result += env_atomic_read(&core->runtime_meta->cached_clines);
 
 	return result;
