@@ -62,11 +62,18 @@ class CacheConfig(Structure):
 class CacheDeviceConfig(Structure):
     _fields_ = [
         ("_uuid", Uuid),
-        ("_cache_line_size", c_uint64),
         ("_volume_type", c_uint8),
-        ("_force", c_bool),
-        ("_min_free_ram", c_uint64),
         ("_perform_test", c_bool),
+        ("_volume_params", c_void_p),
+    ]
+
+
+class CacheAttachConfig(Structure):
+    _fields_ = [
+        ("_device", CacheDeviceConfig),
+        ("_cache_line_size", c_uint64),
+        ("_open_cores", c_bool),
+        ("_force", c_bool),
         ("_discard_on_start", c_bool),
     ]
 
@@ -414,20 +421,26 @@ class Cache:
     ):
         self.device = device
         self.device_name = device.uuid
-        self.dev_cfg = CacheDeviceConfig(
+
+        device_config = CacheDeviceConfig(
             _uuid=Uuid(
                 _data=cast(
                     create_string_buffer(self.device_name.encode("ascii")), c_char_p
+                    ),
+                _size=len(self.device_name) + 1
                 ),
-                _size=len(self.device_name) + 1,
-            ),
             _volume_type=device.type_id,
+            _perform_test=perform_test,
+            _volume_params=None,
+            )
+
+        self.dev_cfg = CacheAttachConfig(
+            _device=device_config,
             _cache_line_size=cache_line_size
             if cache_line_size
             else self.cache_line_size,
             _force=force,
-            _min_free_ram=0,
-            _perform_test=perform_test,
+            _open_cores=True,
             _discard_on_start=False,
         )
 
