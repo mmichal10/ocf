@@ -2096,6 +2096,9 @@ static void handle_previously_invalid(ocf_cache_t cache,
 		remove_from_freelist(cache, cline);
 
 		cline_rebuild_metadata(cache, core_id, core_line, cline);
+
+		ocf_cleaning_init_cache_block(cache, cline);
+		ocf_cleaning_set_hot_cache_line(cache, cline);
 	} else {
 		/* Cline stays on the freelist*/
 
@@ -2119,9 +2122,10 @@ static void handle_previously_valid(ocf_cache_t cache,
 
 		remove_from_default(cache, cline);
 		cline_rebuild_metadata(cache, core_id, core_line, cline);
+		ocf_cleaning_set_hot_cache_line(cache, cline);
 	} else {
 		/* Moving cline from the default partition to the freelist */
-
+		ocf_cleaning_purge_cache_block(cache, cline);
 		_reset_cline(cache, cline);
 	}
 }
