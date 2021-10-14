@@ -252,6 +252,11 @@ struct ocf_mngt_cache_config {
 	ocf_promotion_t promotion_policy;
 
 	/**
+	 * @brief Cleaning policy type
+	 */
+	ocf_cleaning_t cleaning_policy;
+
+	/**
 	 * @brief Cache line size
 	 */
 	ocf_cache_line_size_t cache_line_size;

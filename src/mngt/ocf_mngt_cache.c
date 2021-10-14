@@ -80,6 +80,8 @@ struct ocf_cache_mngt_init_params {
 		/*!< cache mode */
 
 		ocf_promotion_t promotion_policy;
+
+		ocf_cleaning_t cleaning_policy;
 	} metadata;
 };
 
@@ -220,7 +222,6 @@ static void __populate_free(ocf_cache_t cache)
 
 static ocf_error_t __init_cleaning_policy(ocf_cache_t cache)
 {
-	ocf_cleaning_t cleaning_policy = ocf_cleaning_default;
 	int i;
 
 	OCF_ASSERT_PLUGGED(cache);
@@ -2612,6 +2613,11 @@ static int _ocf_mngt_cache_validate_cfg(struct ocf_mngt_cache_config *cfg)
 
 	if (cfg->promotion_policy >= ocf_promotion_max ||
 			cfg->promotion_policy < 0 ) {
+		return -OCF_ERR_INVAL;
+	}
+
+	if (cfg->cleaning_policy >= ocf_cleaning_max ||
+			cfg->cleaning_policy < 0 ) {
 		return -OCF_ERR_INVAL;
 	}
 
