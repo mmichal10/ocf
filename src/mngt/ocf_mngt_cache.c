@@ -230,9 +230,7 @@ static ocf_error_t __init_cleaning_policy(ocf_cache_t cache)
 	for (i = 0; i < ocf_cleaning_max; i++)
 		ocf_cleaning_setup(cache, i);
 
-	cache->conf_meta->cleaning_policy_type = ocf_cleaning_default;
-
-	return ocf_cleaning_initialize(cache, cleaning_policy, 1);
+	return ocf_cleaning_initialize(cache, cache->cleaner.policy, 1);
 }
 
 static void __deinit_cleaning_policy(ocf_cache_t cache)
@@ -533,12 +531,12 @@ static void _ocf_mngt_recovery_rebuild_metadata(ocf_cache_t cache)
 
 static void _ocf_mngt_bind_rebuild_metadata(ocf_cache_t cache)
 {
-	ocf_cleaning_t clean_policy = cache->conf_meta->cleaning_policy_type;
-	cache->conf_meta->cleaning_policy_type = ocf_cleaning_nop;
+	ocf_cleaning_t clean_policy = cache->cleaner.policy;
+	__set_cleaning_policy(cache, ocf_cleaning_nop);
 
 	_ocf_mngt_rebuild_metadata(cache, true);
 
-	cache->conf_meta->cleaning_policy_type = clean_policy;
+	__set_cleaning_policy(cache, clean_policy);
 }
 
 static inline ocf_error_t _ocf_init_cleaning_policy(ocf_cache_t cache,
@@ -570,8 +568,7 @@ static void _ocf_mngt_load_post_metadata_load(ocf_pipeline_t pipeline,
 		__populate_free(cache);
 	}
 
-	result = _ocf_init_cleaning_policy(cache,
-			cache->conf_meta->cleaning_policy_type,
+	result = _ocf_init_cleaning_policy(cache, cache->cleaner.policy,
 			context->metadata.shutdown_status);
 
 	if (result)
@@ -1214,6 +1211,7 @@ static void _ocf_mngt_cache_init(ocf_cache_t cache,
 	cache->conf_meta->cache_mode = params->metadata.cache_mode;
 	cache->conf_meta->metadata_layout = params->metadata.layout;
 	cache->conf_meta->promotion_policy_type = params->metadata.promotion_policy;
+	__set_cleaning_policy(cache, params->metadata.cleaning_policy);
 
 	INIT_LIST_HEAD(&cache->io_queues);
 
@@ -1241,6 +1239,7 @@ static int _ocf_mngt_cache_start(ocf_ctx_t ctx, ocf_cache_t *cache,
 	params.metadata.line_size = cfg->cache_line_size;
 	params.metadata_volatile = cfg->metadata_volatile;
 	params.metadata.promotion_policy = cfg->promotion_policy;
+	params.metadata.cleaning_policy = cfg->cleaning_policy;
 	params.locked = cfg->locked;
 
 	result = env_rmutex_lock_interruptible(&ctx->lock);
@@ -2037,8 +2036,7 @@ static void _ocf_mngt_bind_init_cleaning(ocf_pipeline_t pipeline,
 	ocf_cache_t cache = context->cache;
 	ocf_error_t result;
 
-	result = _ocf_init_cleaning_policy(cache,
-			cache->conf_meta->cleaning_policy_type,
+	result = _ocf_init_cleaning_policy(cache, cache->cleaner.policy,
 			context->metadata.shutdown_status);
 
 	if (result)
@@ -2791,7 +2789,7 @@ static int _ocf_mngt_cache_load_core_log(ocf_core_t core, void *cntx)
 static void _ocf_mngt_cache_load_log(ocf_cache_t cache)
 {
 	ocf_cache_mode_t cache_mode = ocf_cache_get_mode(cache);
-	ocf_cleaning_t cleaning_type = cache->conf_meta->cleaning_policy_type;
+	ocf_cleaning_t cleaning_type = cache->cleaner.policy;
 	ocf_promotion_t promotion_type = cache->conf_meta->promotion_policy_type;
 
 	ocf_cache_log(cache, log_info, "Successfully loaded\n");
