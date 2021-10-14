@@ -2193,6 +2193,11 @@ static void _ocf_mngt_activate_check_superblock_complete(void *priv, int error)
 				-OCF_ERR_CACHE_LINE_SIZE_MISMATCH);
 	}
 
+	if (cache->conf_meta->cleaning_policy_type != cache->cleaner.policy) {
+		OCF_PL_FINISH_RET(context->pipeline,
+				-OCF_ERR_CLEANING_POLICY_MISMATCH);
+	}
+
 	ocf_pipeline_next(context->pipeline);
 }
 

@@ -135,6 +135,9 @@ typedef enum {
 	/** Cache initialized with wrong cache line size */
 	OCF_ERR_CACHE_LINE_SIZE_MISMATCH,
 
+	/** Cache initialized with wrong cleaning policy */
+	OCF_ERR_CLEANING_POLICY_MISMATCH,
+
 	/** Invalid operation for cache in standby state. */
 	OCF_ERR_CACHE_STANDBY,
 } ocf_error_t;
