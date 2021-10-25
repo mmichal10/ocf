@@ -2008,6 +2008,8 @@ static void _ocf_mngt_load_unsafe_complete(void *priv, int error)
 				-OCF_ERR_START_CACHE_FAIL);
 	}
 
+	context->metadata.shutdown_status = ocf_metadata_dirty_shutdown;
+
 	ocf_pipeline_next(context->pipeline);
 }
 
