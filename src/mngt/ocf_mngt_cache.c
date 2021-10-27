@@ -2258,6 +2258,36 @@ static void _ocf_mngt_activate_init_properties(ocf_pipeline_t pipeline,
 	ocf_pipeline_next(pipeline);
 }
 
+static void _ocf_mngt_activate_cleaning_add_cores(ocf_pipeline_t pipeline,
+		void *priv, ocf_pipeline_arg_t arg)
+{
+	struct ocf_cache_attach_context *context = priv;
+	ocf_cache_t cache = context->cache;
+	ocf_core_t core;
+	ocf_core_id_t core_id, err_core_id;
+	int ret;
+
+	for_each_core_metadata(cache, core, core_id) {
+		ret = ocf_cleaning_add_core(cache, core_id);
+		if (ret)
+			goto err;
+	}
+
+	OCF_PL_NEXT_RET(pipeline);
+
+err:
+	err_core_id = core_id;
+
+	for_each_core_metadata(cache, core, core_id) {
+		if (core_id == err_core_id)
+			break;
+
+		ocf_cleaning_remove_core(cache, core_id);
+	}
+
+	OCF_PL_FINISH_RET(pipeline, ret);
+}
+
 static void _ocf_mngt_activate_handle_error(
 		struct ocf_cache_attach_context *context)
 {
@@ -2335,6 +2365,7 @@ struct ocf_pipeline_properties _ocf_mngt_cache_activate_pipeline_properties = {
 		OCF_PL_STEP(_ocf_mngt_test_volume),
 		OCF_PL_STEP(_ocf_mngt_init_promotion),
 		OCF_PL_STEP(_ocf_mngt_load_add_cores),
+		OCF_PL_STEP(_ocf_mngt_activate_cleaning_add_cores),
 		OCF_PL_STEP(_ocf_mngt_attach_shutdown_status),
 		OCF_PL_STEP(_ocf_mngt_attach_post_init),
 		OCF_PL_STEP_TERMINATOR(),
