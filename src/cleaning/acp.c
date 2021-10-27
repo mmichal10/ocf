@@ -614,6 +614,9 @@ void cleaning_policy_acp_set_hot_cache_line(struct ocf_cache *cache,
 	struct acp_cleaning_policy_meta *acp_meta;
 	struct acp_chunk_info *chunk;
 
+	if (unlikely(!ocf_cache_is_running(cache)))
+		return;
+
 	ACP_LOCK_CHUNKS_WR();
 
 	acp_meta = _acp_meta_get(cache, cache_line);
@@ -635,6 +638,9 @@ void cleaning_policy_acp_purge_block(struct ocf_cache *cache,
 	struct acp_context *acp = _acp_get_ctx_from_cache(cache);
 	struct acp_cleaning_policy_meta *acp_meta;
 	struct acp_chunk_info *chunk;
+
+	if (unlikely(!ocf_cache_is_running(cache)))
+		return;
 
 	ACP_LOCK_CHUNKS_WR();
 
