@@ -2065,7 +2065,10 @@ static inline void remove_from_freelist(ocf_cache_t cache,
 
 	lru_list = (cline % OCF_NUM_LRU_LISTS);
 	list = ocf_lru_get_list(&cache->free, lru_list, true);
+
+	OCF_METADATA_LRU_WR_LOCK(cline);
 	remove_lru_list(cache, list, cline);
+	OCF_METADATA_LRU_WR_UNLOCK(cline);
 }
 
 static inline void remove_from_default(ocf_cache_t cache,
@@ -2077,7 +2080,11 @@ static inline void remove_from_default(ocf_cache_t cache,
 
 	lru_list = (cline % OCF_NUM_LRU_LISTS);
 	list = ocf_lru_get_list(&cache->user_parts[part_id].part, lru_list, false);
+
+	OCF_METADATA_LRU_WR_LOCK(cline);
 	remove_lru_list(cache, list, cline);
+	OCF_METADATA_LRU_WR_UNLOCK(cline);
+
 	env_atomic_dec(&cache->user_parts[part_id].part.runtime->curr_size);
 
 }
@@ -2087,6 +2094,7 @@ static void handle_previously_invalid(ocf_cache_t cache,
 {
 	ocf_core_id_t core_id;
 	uint64_t core_line;
+	uint32_t lock_idx = 0; //TODO It shouldn't be constant
 
 	ocf_metadata_get_core_info(cache, cline, &core_id, &core_line);
 
@@ -2095,7 +2103,13 @@ static void handle_previously_invalid(ocf_cache_t cache,
 		/* Moving cline from the freelist to the default partitioin */
 		remove_from_freelist(cache, cline);
 
+		ocf_hb_cline_prot_lock_wr(&cache->metadata.lock, lock_idx, core_id,
+				core_line);
+		OCF_METADATA_LRU_WR_LOCK(cline);
 		cline_rebuild_metadata(cache, core_id, core_line, cline);
+		OCF_METADATA_LRU_WR_UNLOCK(cline);
+		ocf_hb_cline_prot_unlock_wr(&cache->metadata.lock, lock_idx, core_id,
+				core_line);
 
 		ocf_cleaning_init_cache_block(cache, cline);
 		ocf_cleaning_set_hot_cache_line(cache, cline);
@@ -2113,6 +2127,7 @@ static void handle_previously_valid(ocf_cache_t cache,
 {
 	ocf_core_id_t core_id;
 	uint64_t core_line;
+	uint32_t lock_idx = 0; //TODO It shouldn't be constant
 
 	ocf_metadata_get_core_info(cache, cline, &core_id, &core_line);
 
@@ -2121,7 +2136,15 @@ static void handle_previously_valid(ocf_cache_t cache,
 		ENV_BUG_ON(!metadata_test_valid_any(cache, cline));
 
 		remove_from_default(cache, cline);
+
+		ocf_hb_cline_prot_lock_wr(&cache->metadata.lock, lock_idx, core_id,
+				core_line);
+		OCF_METADATA_LRU_WR_LOCK(cline);
 		cline_rebuild_metadata(cache, core_id, core_line, cline);
+		OCF_METADATA_LRU_WR_UNLOCK(cline);
+		ocf_hb_cline_prot_unlock_wr(&cache->metadata.lock, lock_idx, core_id,
+				core_line);
+
 		ocf_cleaning_set_hot_cache_line(cache, cline);
 	} else {
 		/* Moving cline from the default partition to the freelist */
@@ -2179,6 +2202,7 @@ static void cleanup_old_mapping(ocf_cache_t cache, ocf_cache_line_t begin,
 		ocf_cache_line_t end)
 {
 	ocf_cache_line_t cline;
+	uint32_t lock_idx = 0; //TODO It shouldn't be constant
 
 	/* The last page of collision section may contain fewer entries than
 	   entries_in_page */
@@ -2186,9 +2210,10 @@ static void cleanup_old_mapping(ocf_cache_t cache, ocf_cache_line_t begin,
 
 	for (cline = begin; cline < end; cline++) {
 		ocf_core_id_t core_id;
+		uint64_t core_line;
 		ocf_core_t core;
 
-		core_id = ocf_metadata_get_core_id(cache, cline);
+		ocf_metadata_get_core_info(cache, cline, &core_id, &core_line);
 
 		ENV_BUG_ON(core_id > OCF_CORE_ID_INVALID);
 
@@ -2198,7 +2223,11 @@ static void cleanup_old_mapping(ocf_cache_t cache, ocf_cache_line_t begin,
 
 		_dec_core_stats(core);
 
+		ocf_hb_cline_prot_lock_wr(&cache->metadata.lock, lock_idx, core_id,
+				core_line);
 		ocf_metadata_remove_from_collision(cache, cline, PARTITION_DEFAULT);
+		ocf_hb_cline_prot_unlock_wr(&cache->metadata.lock, lock_idx, core_id,
+				core_line);
 	}
 }
 
