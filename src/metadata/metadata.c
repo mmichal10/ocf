@@ -2038,14 +2038,14 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 	if (io->dir == OCF_READ)
 		return 0;
 
+	if (io_start_page >= ctrl->count_pages)
+		return 0;
+
 	if (io->addr % PAGE_SIZE || io->bytes % PAGE_SIZE) {
 		ocf_cache_log(cache, log_crit,
 				"Metadata update not aligned to page size!\n");
 		return -OCF_ERR_INVAL;
 	}
-
-	if (io_start_page >= ctrl->count_pages)
-		return 0;
 
 	for (i = 0; i < ARRAY_SIZE(update_segments); i++) {
 		enum ocf_metadata_segment_id seg = update_segments[i];
