@@ -226,7 +226,7 @@ ctx_data_t *ocf_io_get_data(struct ocf_io *io);
  * @param[in] io OCF IO to be handled
  * @param[in] opaque OCF opaque
  */
-void ocf_io_handle(struct ocf_io *io, void *opaque);
+void ocf_io_handle(void *opaque);
 
 /**
  * @brief Get volume associated with io

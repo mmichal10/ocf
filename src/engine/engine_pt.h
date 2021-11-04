@@ -6,9 +6,9 @@
 #ifndef ENGINE_OFF_H_
 #define ENGINE_OFF_H_
 
-int ocf_read_pt(struct ocf_request *req);
+int ocf_read_pt(ocf_queueable_t *opaque);
 
-int ocf_read_pt_do(struct ocf_request *req);
+int ocf_read_pt_do(ocf_queueable_t *opaque);
 
 void ocf_engine_push_req_front_pt(struct ocf_request *req);
 

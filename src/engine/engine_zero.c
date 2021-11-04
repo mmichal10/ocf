@@ -16,8 +16,11 @@
 #define OCF_ENGINE_DEBUG_IO_NAME "zero"
 #include "engine_debug.h"
 
-static int ocf_zero_purge(struct ocf_request *req)
+static int ocf_zero_purge(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	if (req->error) {
 		ocf_engine_error(req, true, "Failed to discard data on cache");
 	} else {
@@ -55,7 +58,7 @@ static void _ocf_zero_io_flush_metadata(struct ocf_request *req, int error)
 	if (env_atomic_dec_return(&req->req_remaining))
 		return;
 
-	ocf_engine_push_req_front_if(req, &_io_if_zero_purge, true);
+	ocf_engine_push_req_front_if(&req->queueable, &_io_if_zero_purge, true);
 }
 
 static inline void ocf_zero_map_info(struct ocf_request *req)
@@ -99,8 +102,10 @@ static inline void ocf_zero_map_info(struct ocf_request *req)
 	}
 }
 
-static int _ocf_zero_do(struct ocf_request *req)
+static int _ocf_zero_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_cache *cache = req->cache;
 
 	/* Get OCF request - increase reference counter */
@@ -134,8 +139,10 @@ static const struct ocf_io_if _io_if_ocf_zero_do = {
  *	- Caller has to have metadata write lock
  *	- Core line has to be mapped
  */
-void ocf_engine_zero_line(struct ocf_request *req)
+void ocf_engine_zero_line(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	int lock = OCF_LOCK_NOT_ACQUIRED;
 
 	ENV_BUG_ON(req->core_line_count != 1);
@@ -149,7 +156,7 @@ void ocf_engine_zero_line(struct ocf_request *req)
 
 	ENV_BUG_ON(!ocf_engine_is_mapped(req));
 
-	req->io_if = &_io_if_ocf_zero_do;
+	req->queueable.io_if = &_io_if_ocf_zero_do;
 
 	/* Some cache line are mapped, lock request for WRITE access */
 	lock = ocf_req_async_lock_wr(
@@ -158,7 +165,7 @@ void ocf_engine_zero_line(struct ocf_request *req)
 
 	if (lock >= 0) {
 		ENV_BUG_ON(lock != OCF_LOCK_ACQUIRED);
-		ocf_engine_push_req_front_if(req, &_io_if_ocf_zero_do, true);
+		ocf_engine_push_req_front_if(&req->queueable, &_io_if_ocf_zero_do, true);
 	} else {
 		OCF_DEBUG_RQ(req, "LOCK ERROR %d", lock);
 		req->complete(req, lock);

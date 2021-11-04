@@ -715,7 +715,7 @@ uint32_t ocf_lru_req_clines(struct ocf_request *req,
 	ENV_BUG_ON(req->part_id == PARTITION_FREELIST);
 	dst_part = &cache->user_parts[req->part_id].part;
 
-	lru_idx = req->io_queue->lru_idx++ % OCF_NUM_LRU_LISTS;
+	lru_idx = req->queueable.io_queue->lru_idx++ % OCF_NUM_LRU_LISTS;
 
 	lru_iter_eviction_init(&iter, cache, src_part, lru_idx, req);
 

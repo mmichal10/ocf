@@ -248,7 +248,7 @@ void ocf_submit_cache_reqs(struct ocf_cache *cache,
 		addr += ((req->byte_position + offset) % ocf_line_size(cache));
 		bytes = size;
 
-		io = ocf_new_cache_io(cache, req->io_queue,
+		io = ocf_new_cache_io(cache, req->queueable.io_queue,
 				addr, bytes, dir, io_class, flags);
 		if (!io) {
 			callback(req, -OCF_ERR_NO_MEM);
@@ -296,7 +296,7 @@ void ocf_submit_cache_reqs(struct ocf_cache *cache,
 		bytes = OCF_MIN(bytes, size - total_bytes);
 		ENV_BUG_ON(bytes == 0);
 
-		io = ocf_new_cache_io(cache, req->io_queue,
+		io = ocf_new_cache_io(cache, req->queueable.io_queue,
 				addr, bytes, dir, io_class, flags);
 		if (!io) {
 			/* Finish all IOs which left with ERROR */
@@ -329,14 +329,14 @@ void ocf_submit_volume_req(ocf_volume_t volume, struct ocf_request *req,
 {
 	uint64_t flags = req->ioi.io.flags;
 	uint32_t io_class = req->ioi.io.io_class;
-	int dir = req->rw;
+	int dir = req->queueable.rw;
 	struct ocf_io *io;
 	int err;
 
 	ocf_core_stats_core_block_update(req->core, io_class, dir,
 			req->byte_length);
 
-	io = ocf_volume_new_io(volume, req->io_queue, req->byte_position,
+	io = ocf_volume_new_io(volume, req->queueable.io_queue, req->byte_position,
 			req->byte_length, dir, io_class, flags);
 	if (!io) {
 		callback(req, -OCF_ERR_NO_MEM);

@@ -22,7 +22,7 @@ static void _ocf_d2c_completion(struct ocf_request *req, int error)
 
 	if (req->error) {
 		req->info.core_error = 1;
-		ocf_core_stats_core_error_update(req->core, req->rw);
+		ocf_core_stats_core_error_update(req->core, req->queueable.rw);
 	}
 
 	/* Complete request */
@@ -32,8 +32,10 @@ static void _ocf_d2c_completion(struct ocf_request *req, int error)
 	ocf_req_put(req);
 }
 
-int ocf_io_d2c(struct ocf_request *req)
+int ocf_io_d2c(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	ocf_core_t core = req->core;
 
 	OCF_DEBUG_TRACE(req->cache);
@@ -47,7 +49,7 @@ int ocf_io_d2c(struct ocf_request *req)
 
 	ocf_engine_update_block_stats(req);
 
-	ocf_core_stats_request_pt_update(req->core, req->part_id, req->rw,
+	ocf_core_stats_request_pt_update(req->core, req->part_id, req->queueable.rw,
 			req->info.hit_no, req->core_line_count);
 
 	/* Put OCF request - decrease reference counter */

@@ -392,12 +392,14 @@ static void _ocf_mngt_flush_portion_end(void *private_data, int error)
 		return;
 	}
 
-	ocf_engine_push_req_back(fc->req, false);
+	ocf_engine_push_req_back(&fc->req->queueable, false);
 }
 
 
-static int _ofc_flush_container_step(struct ocf_request *req)
+static int _ofc_flush_container_step(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct flush_container *fc = req->priv;
 	ocf_cache_t cache = fc->cache;
 
@@ -434,7 +436,7 @@ static void _ocf_mngt_flush_container(
 	}
 
 	req->info.internal = true;
-	req->io_if = &_io_if_flush_portion;
+	req->queueable.io_if = &_io_if_flush_portion;
 	req->priv = fc;
 
 	fc->req = req;
@@ -448,7 +450,7 @@ static void _ocf_mngt_flush_container(
 	fc->ticks1 = 0;
 	fc->ticks2 = UINT_MAX;
 
-	ocf_engine_push_req_back(fc->req, true);
+	ocf_engine_push_req_back(&fc->req->queueable, true);
 	return;
 
 finish:

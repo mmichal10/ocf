@@ -6,6 +6,6 @@
 #ifndef __CACHE_ENGINE_OPS_H_
 #define __CACHE_ENGINE_OPS_H_
 
-int ocf_engine_ops(struct ocf_request *req);
+int ocf_engine_ops(ocf_queueable_t *opaque);
 
 #endif /* __CACHE_ENGINE_OPS_H_ */

@@ -380,7 +380,7 @@ static void _ocf_engine_clean_end(void *private_data, int error)
 	} else {
 		req->info.dirty_any = 0;
 		req->info.dirty_all = 0;
-		ocf_engine_push_req_front(req, true);
+		ocf_engine_push_req_front(&req->queueable, true);
 	}
 }
 
@@ -412,7 +412,7 @@ static int lock_clines(struct ocf_request *req)
 	struct ocf_alock *c = ocf_cache_line_concurrency(req->cache);
 	int lock_type = OCF_WRITE;
 
-	if (req->rw == OCF_READ && ocf_engine_is_hit(req))
+	if (req->queueable.rw == OCF_READ && ocf_engine_is_hit(req))
 		lock_type = OCF_READ;
 
 	return lock_type == OCF_WRITE ?
@@ -517,7 +517,7 @@ int ocf_engine_prepare_clines(struct ocf_request *req)
 	ocf_hb_req_prot_unlock_wr(req);
 
 	if (ocf_req_is_cleaning_required(req)) {
-		ocf_lru_clean(req->cache, user_part, req->io_queue,
+		ocf_lru_clean(req->cache, user_part, req->queueable.io_queue,
 				128);
 	}
 
@@ -565,7 +565,7 @@ void ocf_engine_clean(struct ocf_request *req)
 			.getter_item = 0,
 
 			.count = req->info.dirty_any,
-			.io_queue = req->io_queue
+			.io_queue = req->queueable.io_queue
 	};
 
 	/* Start cleaning */
@@ -574,19 +574,19 @@ void ocf_engine_clean(struct ocf_request *req)
 
 void ocf_engine_update_block_stats(struct ocf_request *req)
 {
-	ocf_core_stats_vol_block_update(req->core, req->part_id, req->rw,
+	ocf_core_stats_vol_block_update(req->core, req->part_id, req->queueable.rw,
 			req->byte_length);
 }
 
 void ocf_engine_update_request_stats(struct ocf_request *req)
 {
-	ocf_core_stats_request_update(req->core, req->part_id, req->rw,
+	ocf_core_stats_request_update(req->core, req->part_id, req->queueable.rw,
 			req->info.hit_no, req->core_line_count);
 }
 
-void ocf_engine_push_req_back(struct ocf_request *req, bool allow_sync)
+void ocf_engine_push_req_back(ocf_queueable_t *req, bool allow_sync)
 {
-	ocf_cache_t cache = req->cache;
+	//ocf_cache_t cache = req->cache;
 	ocf_queue_t q = NULL;
 	unsigned long lock_flags = 0;
 
@@ -595,10 +595,14 @@ void ocf_engine_push_req_back(struct ocf_request *req, bool allow_sync)
 	ENV_BUG_ON(!req->io_queue);
 	q = req->io_queue;
 
+	ocf_cache_log(q->cache, log_crit, "Push req back\n");
+
+	/*
 	if (!req->info.internal) {
 		env_atomic_set(&cache->last_access_ms,
 				env_ticks_to_msecs(env_get_tick_count()));
 	}
+	*/
 
 	env_spinlock_lock_irqsave(&q->io_list_lock, lock_flags);
 
@@ -614,9 +618,9 @@ void ocf_engine_push_req_back(struct ocf_request *req, bool allow_sync)
 	ocf_queue_kick(q, allow_sync);
 }
 
-void ocf_engine_push_req_front(struct ocf_request *req, bool allow_sync)
+void ocf_engine_push_req_front(ocf_queueable_t *req, bool allow_sync)
 {
-	ocf_cache_t cache = req->cache;
+	//ocf_cache_t cache = req->cache;
 	ocf_queue_t q = NULL;
 	unsigned long lock_flags = 0;
 
@@ -625,10 +629,14 @@ void ocf_engine_push_req_front(struct ocf_request *req, bool allow_sync)
 
 	q = req->io_queue;
 
+	ocf_cache_log(q->cache, log_crit, "Push req front\n");
+
+	/*
 	if (!req->info.internal) {
 		env_atomic_set(&cache->last_access_ms,
 				env_ticks_to_msecs(env_get_tick_count()));
 	}
+	*/
 
 	env_spinlock_lock_irqsave(&q->io_list_lock, lock_flags);
 
@@ -644,11 +652,11 @@ void ocf_engine_push_req_front(struct ocf_request *req, bool allow_sync)
 	ocf_queue_kick(q, allow_sync);
 }
 
-void ocf_engine_push_req_front_if(struct ocf_request *req,
+void ocf_engine_push_req_front_if(ocf_queueable_t *req,
 		const struct ocf_io_if *io_if,
 		bool allow_sync)
 {
-	req->error = 0; /* Please explain why!!! */
+	//req->error = 0; /* Please explain why!!! */
 	req->io_if = io_if;
 	ocf_engine_push_req_front(req, allow_sync);
 }
@@ -667,9 +675,11 @@ void inc_fallback_pt_error_counter(ocf_cache_t cache)
 	}
 }
 
-static int _ocf_engine_refresh(struct ocf_request *req)
+static int _ocf_engine_refresh(ocf_queueable_t *opaque)
 {
 	int result;
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 
 	/* Check under metadata RD lock */
 	ocf_hb_req_prot_lock_rd(req);
@@ -681,14 +691,14 @@ static int _ocf_engine_refresh(struct ocf_request *req)
 	if (result == 0) {
 
 		/* Refresh successful, can process with original IO interface */
-		req->io_if = req->priv;
+		req->queueable.io_if = req->priv;
 
 		req->priv = NULL;
 
-		if (req->rw == OCF_READ)
-			req->io_if->read(req);
-		else if (req->rw == OCF_WRITE)
-			req->io_if->write(req);
+		if (req->queueable.rw == OCF_READ)
+			req->queueable.io_if->read(opaque);
+		else if (req->queueable.rw == OCF_WRITE)
+			req->queueable.io_if->write(opaque);
 		else
 			ENV_BUG();
 	} else {
@@ -716,12 +726,12 @@ static const struct ocf_io_if _io_if_refresh = {
 void ocf_engine_on_resume(struct ocf_request *req)
 {
 	ENV_BUG_ON(req->priv);
-	OCF_CHECK_NULL(req->io_if);
+	OCF_CHECK_NULL(req->queueable.io_if);
 
 	/* Exchange IO interface */
-	req->priv = (void *)req->io_if;
+	req->priv = (void *)req->queueable.io_if;
 
 	OCF_DEBUG_RQ(req, "On resume");
 
-	ocf_engine_push_req_front_if(req, &_io_if_refresh, false);
+	ocf_engine_push_req_front_if(&req->queueable, &_io_if_refresh, false);
 }

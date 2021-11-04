@@ -71,8 +71,10 @@ static void _ocf_write_wt_do_flush_metadata_compl(struct ocf_request *req,
 	ocf_req_put(req);
 }
 
-static int ocf_write_wt_do_flush_metadata(struct ocf_request *req)
+static int ocf_write_wt_do_flush_metadata(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_cache *cache = req->cache;
 
 	env_atomic_set(&req->req_remaining, 1);
@@ -116,7 +118,8 @@ static void _ocf_write_wt_req_complete(struct ocf_request *req)
 
 	if (req->info.dirty_any) {
 		/* Some of the request's cachelines changed its state to clean */
-		ocf_engine_push_req_front_if(req, &_io_if_wt_flush_metadata, true);
+		ocf_engine_push_req_front_if(&req->queueable,
+				&_io_if_wt_flush_metadata, true);
 	} else {
 		ocf_req_unlock_wr(ocf_cache_line_concurrency(req->cache), req);
 
@@ -170,8 +173,11 @@ static inline void _ocf_write_wt_submit(struct ocf_request *req)
 			_ocf_write_wt_core_complete);
 }
 
-static int _ocf_write_wt_do(struct ocf_request *req)
+static int _ocf_write_wt_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	/* Get OCF request - increase reference counter */
 	ocf_req_get(req);
 
@@ -198,6 +204,7 @@ static int _ocf_write_wt_do(struct ocf_request *req)
 static const struct ocf_io_if _io_if_wt_resume = {
 	.read = _ocf_write_wt_do,
 	.write = _ocf_write_wt_do,
+	.name = "WT resume",
 };
 
 static const struct ocf_engine_callbacks _wt_engine_callbacks =
@@ -205,8 +212,10 @@ static const struct ocf_engine_callbacks _wt_engine_callbacks =
 	.resume = ocf_engine_on_resume,
 };
 
-int ocf_write_wt(struct ocf_request *req)
+int ocf_write_wt(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	int lock = OCF_LOCK_NOT_ACQUIRED;
 
 	ocf_io_start(&req->ioi.io);
@@ -215,7 +224,7 @@ int ocf_write_wt(struct ocf_request *req)
 	ocf_req_get(req);
 
 	/* Set resume io_if */
-	req->io_if = &_io_if_wt_resume;
+	req->queueable.io_if = &_io_if_wt_resume;
 	req->engine_cbs = &_wt_engine_callbacks;
 
 	lock = ocf_engine_prepare_clines(req);
@@ -226,7 +235,7 @@ int ocf_write_wt(struct ocf_request *req)
 				/* WR lock was not acquired, need to wait for resume */
 				OCF_DEBUG_RQ(req, "NO LOCK");
 			} else {
-				_ocf_write_wt_do(req);
+				_ocf_write_wt_do(opaque);
 			}
 		} else {
 			OCF_DEBUG_RQ(req, "LOCK ERROR %d\n", lock);
@@ -235,7 +244,7 @@ int ocf_write_wt(struct ocf_request *req)
 		}
 	} else {
 		ocf_req_clear(req);
-		ocf_get_io_if(ocf_cache_mode_pt)->write(req);
+		ocf_get_io_if(ocf_cache_mode_pt)->write(opaque);
 	}
 
 	/* Put OCF request - decrease reference counter */

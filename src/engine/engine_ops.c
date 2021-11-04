@@ -35,8 +35,10 @@ static void _ocf_engine_ops_complete(struct ocf_request *req, int error)
 	ocf_req_put(req);
 }
 
-int ocf_engine_ops(struct ocf_request *req)
+int ocf_engine_ops(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_cache *cache = req->cache;
 
 	OCF_DEBUG_TRACE(req->cache);
@@ -51,7 +53,7 @@ int ocf_engine_ops(struct ocf_request *req)
 	ocf_submit_volume_req(&req->core->volume, req,
 			_ocf_engine_ops_complete);
 
-	ocf_submit_cache_reqs(cache, req, req->rw, 0, req->byte_length,
+	ocf_submit_cache_reqs(cache, req, req->queueable.rw, 0, req->byte_length,
 			1, _ocf_engine_ops_complete);
 
 	/* Put OCF request - decrease reference counter */

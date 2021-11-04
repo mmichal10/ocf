@@ -92,13 +92,15 @@ static void metadata_io_read_i_atomic_step_end(struct ocf_io *io, int error)
 	context->curr_offset += context->curr_count;
 
 	if (context->count > 0)
-		ocf_engine_push_req_front(context->req, true);
+		ocf_engine_push_req_front(&context->req->queueable, true);
 	else
 		metadata_io_read_i_atomic_complete(context, 0);
 }
 
-int metadata_io_read_i_atomic_step(struct ocf_request *req)
+int metadata_io_read_i_atomic_step(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct metadata_io_read_i_atomic_context *context = req->priv;
 	ocf_cache_t cache = context->cache;
 	uint64_t max_sectors_count = PAGE_SIZE / OCF_ATOMIC_METADATA_SIZE;
@@ -112,7 +114,7 @@ int metadata_io_read_i_atomic_step(struct ocf_request *req)
 	ctx_data_seek(cache->owner, context->data, ctx_data_seek_begin, 0);
 
 	/* Allocate new IO */
-	io = ocf_new_cache_io(cache, req->io_queue,
+	io = ocf_new_cache_io(cache, req->queueable.io_queue,
 			cache->device->metadata_offset +
 			SECTORS_TO_BYTES(context->curr_offset),
 			SECTORS_TO_BYTES(context->curr_count), OCF_READ, 0, 0);
@@ -140,6 +142,7 @@ int metadata_io_read_i_atomic_step(struct ocf_request *req)
 static const struct ocf_io_if _io_if_metadata_io_read_i_atomic_step = {
 	.read = metadata_io_read_i_atomic_step,
 	.write = metadata_io_read_i_atomic_step,
+	.name = "MD read step",
 };
 
 /*
@@ -166,7 +169,7 @@ int metadata_io_read_i_atomic(ocf_cache_t cache, ocf_queue_t queue, void *priv,
 	}
 
 	context->req->info.internal = true;
-	context->req->io_if = &_io_if_metadata_io_read_i_atomic_step;
+	context->req->queueable.io_if = &_io_if_metadata_io_read_i_atomic_step;
 	context->req->priv = context;
 
 	/* Allocate one 4k page for metadata*/
@@ -185,7 +188,7 @@ int metadata_io_read_i_atomic(ocf_cache_t cache, ocf_queue_t queue, void *priv,
 	context->compl_hndl = compl_hndl;
 	context->priv = priv;
 
-	ocf_engine_push_req_front(context->req, true);
+	ocf_engine_push_req_front(&context->req->queueable, true);
 
 	return 0;
 }
@@ -222,15 +225,17 @@ static void metadata_io_io_cmpl(struct ocf_io *io, int error)
 	ocf_io_put(io);
 }
 
-static int metadata_io_do(struct ocf_request *req)
+static int metadata_io_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct metadata_io_request *m_req = req->priv;
 	ocf_cache_t cache = req->cache;
 	struct ocf_io *io;
 	int ret;
 
 	/* Fill with the latest metadata. */
-	if (m_req->req.rw == OCF_WRITE) {
+	if (m_req->req.queueable.rw == OCF_WRITE) {
 		ocf_metadata_start_shared_access(&cache->metadata.lock,
 				m_req->page % OCF_NUM_GLOBAL_META_LOCKS);
 		metadata_io_req_fill(m_req);
@@ -238,10 +243,10 @@ static int metadata_io_do(struct ocf_request *req)
 				 m_req->page % OCF_NUM_GLOBAL_META_LOCKS);
 	}
 
-	io = ocf_new_cache_io(cache, req->io_queue,
+	io = ocf_new_cache_io(cache, req->queueable.io_queue,
 			PAGES_TO_BYTES(m_req->page),
 			PAGES_TO_BYTES(m_req->count),
-			m_req->req.rw, 0, m_req->asynch->flags);
+			m_req->req.queueable.rw, 0, m_req->asynch->flags);
 	if (!io) {
 		metadata_io_io_end(m_req, -OCF_ERR_NO_MEM);
 		return 0;
@@ -263,6 +268,7 @@ static int metadata_io_do(struct ocf_request *req)
 static struct ocf_io_if metadata_io_do_if = {
 	.read = metadata_io_do,
 	.write = metadata_io_do,
+	.name = "MD io do",
 };
 
 void metadata_io_req_finalize(struct metadata_io_request *m_req)
@@ -276,19 +282,21 @@ void metadata_io_req_finalize(struct metadata_io_request *m_req)
 
 static void metadata_io_page_lock_acquired(struct ocf_request *req)
 {
-	ocf_engine_push_req_front(req, true);
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
-static int metadata_io_restart_req(struct ocf_request *req)
+static int metadata_io_restart_req(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct metadata_io_request *m_req = req->priv;
 	struct metadata_io_request_asynch *a_req = m_req->asynch;
 	int lock;
 
-	m_req->req.io_if = &metadata_io_do_if;
+	m_req->req.queueable.io_if = &metadata_io_do_if;
 
 	if (!a_req->mio_conc) {
-		metadata_io_do(&m_req->req);
+		metadata_io_do(&m_req->req.queueable);
 		return 0;
 	}
 
@@ -302,7 +310,7 @@ static int metadata_io_restart_req(struct ocf_request *req)
 	}
 
 	if (lock == OCF_LOCK_ACQUIRED)
-		metadata_io_do(&m_req->req);
+		metadata_io_do(&m_req->req.queueable);
 
 	return 0;
 }
@@ -310,6 +318,7 @@ static int metadata_io_restart_req(struct ocf_request *req)
 static struct ocf_io_if metadata_io_restart_if = {
 	.read = metadata_io_restart_req,
 	.write = metadata_io_restart_req,
+	.name = "MD restart\n",
 };
 
 static void  metadata_io_req_advance(struct metadata_io_request *m_req);
@@ -327,7 +336,7 @@ static void metadata_io_io_end(struct metadata_io_request *m_req, int error)
 	if (error) {
 		a_req->error = a_req->error ?: error;
 	} else {
-		if (m_req->req.rw == OCF_READ)
+		if (m_req->req.queueable.rw == OCF_READ)
 			metadata_io_req_drain(m_req);
 	}
 
@@ -400,7 +409,7 @@ static void metadata_io_req_start(struct metadata_io_request *m_req)
 		return;
 	}
 
-	metadata_io_restart_req(&m_req->req);
+	metadata_io_restart_req(&m_req->req.queueable);
 }
 
 void metadata_io_req_complete(struct metadata_io_request *m_req)
@@ -412,8 +421,8 @@ void metadata_io_req_complete(struct metadata_io_request *m_req)
 		return;
 	}
 
-	m_req->req.io_if = &metadata_io_restart_if;
-	ocf_engine_push_req_front(&m_req->req, true);
+	m_req->req.queueable.io_if = &metadata_io_restart_if;
+	ocf_engine_push_req_front(&m_req->req.queueable, true);
 }
 
 /*
@@ -461,12 +470,12 @@ static int metadata_io_i_asynch(ocf_cache_t cache, ocf_queue_t queue, int dir,
 		m_req->asynch = a_req;
 		m_req->cache = cache;
 		m_req->context = context;
-		m_req->req.io_if = &metadata_io_restart_if;
-		m_req->req.io_queue = queue;
+		m_req->req.queueable.io_if = &metadata_io_restart_if;
+		m_req->req.queueable.io_queue = queue;
 		m_req->req.cache = cache;
 		m_req->req.priv = m_req;
 		m_req->req.info.internal = true;
-		m_req->req.rw = dir;
+		m_req->req.queueable.rw = dir;
 		m_req->req.map = LIST_POISON1;
 		m_req->req.alock_status = (uint8_t*)&m_req->alock_status;
 

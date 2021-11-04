@@ -102,6 +102,7 @@ class Core:
         if not self.cache:
             raise Exception("Core isn't attached to any cache")
 
+        print("New core io\n")
         io = OcfLib.getInstance().ocf_core_new_io_wrapper(
             self.handle, queue.handle, addr, length, direction, io_class, flags)
 

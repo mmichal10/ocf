@@ -6,6 +6,6 @@
 #ifndef ENGINE_WO_H_
 #define ENGINE_WO_H_
 
-int ocf_read_wo(struct ocf_request *req);
+int ocf_read_wo(ocf_queueable_t *opaque);
 
 #endif /* ENGINE_WO_H_ */

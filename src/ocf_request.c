@@ -109,7 +109,7 @@ struct ocf_request *ocf_req_new(ocf_queue_t queue, ocf_core_t core,
 	OCF_DEBUG_TRACE(cache);
 
 	ocf_queue_get(queue);
-	req->io_queue = queue;
+	req->queueable.io_queue = queue;
 
 	req->core = core;
 	req->cache = cache;
@@ -124,7 +124,7 @@ struct ocf_request *ocf_req_new(ocf_queue_t queue, ocf_core_t core,
 	req->core_line_first = core_line_first;
 	req->core_line_last = core_line_last;
 	req->core_line_count = core_line_count;
-	req->rw = rw;
+	req->queueable.rw = rw;
 	req->part_id = PARTITION_DEFAULT;
 
 	req->discard.sector = BYTES_TO_SECTORS(addr);
@@ -211,14 +211,14 @@ void ocf_req_get(struct ocf_request *req)
 
 void ocf_req_put(struct ocf_request *req)
 {
-	ocf_queue_t queue = req->io_queue;
+	ocf_queue_t queue = req->queueable.io_queue;
 
 	if (env_atomic_dec_return(&req->ref_count))
 		return;
 
 	OCF_DEBUG_TRACE(req->cache);
 
-	if (!req->d2c && req->io_queue != req->cache->mngt_queue)
+	if (!req->d2c && req->queueable.io_queue != req->cache->mngt_queue)
 		ocf_refcnt_dec(&req->cache->refcnt.metadata);
 
 	if (req->map != req->__map)

@@ -6,7 +6,7 @@
 #ifndef ENGINE_FAST_H_
 #define ENGINE_FAST_H_
 
-int ocf_read_fast(struct ocf_request *req);
-int ocf_write_fast(struct ocf_request *req);
+int ocf_read_fast(ocf_queueable_t *opaque);
+int ocf_write_fast(ocf_queueable_t *opaque);
 
 #endif /* ENGINE_WI_H_ */

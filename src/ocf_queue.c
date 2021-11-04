@@ -79,10 +79,9 @@ void ocf_queue_put(ocf_queue_t queue)
 	}
 }
 
-void ocf_io_handle(struct ocf_io *io, void *opaque)
+void ocf_io_handle(void *opaque)
 {
-	struct ocf_request *req = opaque;
-
+	ocf_queueable_t *req = (ocf_queueable_t*)opaque;
 	OCF_CHECK_NULL(req);
 
 	if (req->rw == OCF_WRITE)
@@ -93,19 +92,22 @@ void ocf_io_handle(struct ocf_io *io, void *opaque)
 
 void ocf_queue_run_single(ocf_queue_t q)
 {
-	struct ocf_request *io_req = NULL;
+	ocf_queueable_t *io_req = NULL;
 
 	OCF_CHECK_NULL(q);
-
 	io_req = ocf_engine_pop_req(q);
 
 	if (!io_req)
 		return;
 
-	if (io_req->ioi.io.handle)
+	/*
+	if (io_req->ioi.io.handle) {
+		ENV_BUG();
 		io_req->ioi.io.handle(&io_req->ioi.io, io_req);
-	else
-		ocf_io_handle(&io_req->ioi.io, io_req);
+	} else
+	*/
+
+	ocf_io_handle(io_req);
 }
 
 void ocf_queue_run(ocf_queue_t q)
@@ -115,7 +117,9 @@ void ocf_queue_run(ocf_queue_t q)
 	OCF_CHECK_NULL(q);
 
 	while (env_atomic_read(&q->io_no) > 0) {
+		ocf_cache_log(q->cache, log_crit, "Io to be handled\n");
 		ocf_queue_run_single(q);
+		ocf_cache_log(q->cache, log_crit, "Io handled\n");
 
 		OCF_COND_RESCHED(step, 128);
 	}
@@ -135,6 +139,7 @@ void *ocf_queue_get_priv(ocf_queue_t q)
 
 uint32_t ocf_queue_pending_io(ocf_queue_t q)
 {
+	ocf_cache_log(q->cache, log_info, "Get pendig io\n");
 	OCF_CHECK_NULL(q);
 	return env_atomic_read(&q->io_no);
 }

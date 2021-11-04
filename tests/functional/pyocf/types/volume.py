@@ -156,7 +156,9 @@ class Volume(Structure):
             OcfLib.getInstance().ocf_io_get_volume(io_structure)
         )
 
+        print("Submit volume regular io")
         volume.submit_io(io_structure)
+        print("Regular io finished")
 
     @staticmethod
     @VolumeOps.SUBMIT_FLUSH
@@ -166,11 +168,14 @@ class Volume(Structure):
             OcfLib.getInstance().ocf_io_get_volume(io_structure)
         )
 
+        print("Submit volume flush io")
         volume.submit_flush(io_structure)
+        print("Flush io finished")
 
     @staticmethod
     @VolumeOps.SUBMIT_METADATA
     def _submit_metadata(meta):
+        print("Submit md")
         pass
 
     @staticmethod
@@ -181,11 +186,14 @@ class Volume(Structure):
             OcfLib.getInstance().ocf_io_get_volume(io_structure)
         )
 
+        print("Submit volume discard io")
         volume.submit_discard(io_structure)
+        print("Discard io finished")
 
     @staticmethod
     @VolumeOps.SUBMIT_WRITE_ZEROES
     def _submit_write_zeroes(write_zeroes):
+        print("Submit write zeros")
         pass
 
     @staticmethod

@@ -51,8 +51,10 @@ static void ocf_read_wo_cache_io(struct ocf_request *req, uint64_t offset,
 			ocf_read_wo_cache_complete);
 }
 
-static int ocf_read_wo_cache_do(struct ocf_request *req)
+static int ocf_read_wo_cache_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	ocf_cache_t cache = req->cache;
 	uint32_t s, e, i;
 	uint64_t line;
@@ -174,12 +176,15 @@ static void _ocf_read_wo_core_complete(struct ocf_request *req, int error)
 		return;
 	}
 
-	req->io_if = &_io_if_wo_cache_read;
-	ocf_engine_push_req_front(req, true);
+	req->queueable.io_if = &_io_if_wo_cache_read;
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
-int ocf_read_wo_do(struct ocf_request *req)
+int ocf_read_wo_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	ocf_req_get(req);
 
 	/* Lack of cacheline repartitioning here is deliberate. WO cache mode
@@ -212,8 +217,11 @@ static const struct ocf_io_if _io_if_wo_resume = {
 	.write = ocf_read_wo_do,
 };
 
-int ocf_read_wo(struct ocf_request *req)
+int ocf_read_wo(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	int lock = OCF_LOCK_ACQUIRED;
 
 	OCF_DEBUG_TRACE(req->cache);
@@ -224,7 +232,7 @@ int ocf_read_wo(struct ocf_request *req)
 	ocf_req_get(req);
 
 	/* Set resume call backs */
-	req->io_if = &_io_if_wo_resume;
+	req->queueable.io_if = &_io_if_wo_resume;
 
 	ocf_req_hash(req);
 	ocf_hb_req_prot_lock_rd(req); /*- Metadata RD access -----------------------*/
@@ -249,7 +257,7 @@ int ocf_read_wo(struct ocf_request *req)
 			OCF_DEBUG_RQ(req, "NO LOCK");
 		} else {
 			/* Lock was acquired can perform IO */
-			ocf_read_wo_do(req);
+			ocf_read_wo_do(opaque);
 		}
 	} else {
 		OCF_DEBUG_RQ(req, "LOCK ERROR %d", lock);

@@ -68,8 +68,10 @@ static void _ocf_write_wb_io_flush_metadata(struct ocf_request *req, int error)
 	ocf_req_put(req);
 }
 
-static int ocf_write_wb_do_flush_metadata(struct ocf_request *req)
+static int ocf_write_wb_do_flush_metadata(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_cache *cache = req->cache;
 
 	env_atomic_set(&req->req_remaining, 1); /* One core IO */
@@ -111,7 +113,7 @@ static void _ocf_write_wb_complete(struct ocf_request *req, int error)
 
 		ocf_engine_invalidate(req);
 	} else {
-		ocf_engine_push_req_front_if(req, &_io_if_wb_flush_metadata,
+		ocf_engine_push_req_front_if(&req->queueable, &_io_if_wb_flush_metadata,
 				true);
 	}
 }
@@ -149,8 +151,11 @@ static inline void _ocf_write_wb_submit(struct ocf_request *req)
 			ocf_engine_io_count(req), _ocf_write_wb_complete);
 }
 
-int ocf_write_wb_do(struct ocf_request *req)
+int ocf_write_wb_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	/* Get OCF request - increase reference counter */
 	ocf_req_get(req);
 
@@ -172,8 +177,11 @@ static const struct ocf_engine_callbacks _wb_engine_callbacks =
 	.resume = ocf_engine_on_resume,
 };
 
-int ocf_write_wb(struct ocf_request *req)
+int ocf_write_wb(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	int lock = OCF_LOCK_NOT_ACQUIRED;
 
 	ocf_io_start(&req->ioi.io);
@@ -182,7 +190,7 @@ int ocf_write_wb(struct ocf_request *req)
 	ocf_req_get(req);
 
 	/* Set resume io_if */
-	req->io_if = &_io_if_wb_resume;
+	req->queueable.io_if = &_io_if_wb_resume;
 	req->engine_cbs = &_wb_engine_callbacks;
 
 	/* TODO: Handle fits into dirty */
@@ -195,7 +203,7 @@ int ocf_write_wb(struct ocf_request *req)
 				/* WR lock was not acquired, need to wait for resume */
 				OCF_DEBUG_RQ(req, "NO LOCK");
 			} else {
-				ocf_write_wb_do(req);
+				ocf_write_wb_do(opaque);
 			}
 		} else {
 			OCF_DEBUG_RQ(req, "LOCK ERROR %d", lock);
@@ -204,7 +212,7 @@ int ocf_write_wb(struct ocf_request *req)
 		}
 	} else {
 		ocf_req_clear(req);
-		ocf_get_io_if(ocf_cache_mode_pt)->write(req);
+		ocf_get_io_if(ocf_cache_mode_pt)->write(opaque);
 	}
 
 	/* Put OCF request - decrease reference counter */

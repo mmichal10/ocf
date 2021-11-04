@@ -14,8 +14,11 @@
 #define OCF_ENGINE_DEBUG_IO_NAME "wa"
 #include "engine_debug.h"
 
-int ocf_write_wa(struct ocf_request *req)
+int ocf_write_wa(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	ocf_io_start(&req->ioi.io);
 
 	/* Get OCF request - increase reference counter */
@@ -34,13 +37,13 @@ int ocf_write_wa(struct ocf_request *req)
 		ocf_req_clear(req);
 
 		/* There is HIT, do WT */
-		ocf_get_io_if(ocf_cache_mode_wt)->write(req);
+		ocf_get_io_if(ocf_cache_mode_wt)->write(opaque);
 
 	} else {
 		ocf_req_clear(req);
 
 		/* MISS, do WI */
-		ocf_get_io_if(ocf_cache_mode_wi)->write(req);
+		ocf_get_io_if(ocf_cache_mode_wi)->write(opaque);
 	}
 
 	/* Put OCF request - decrease reference counter */

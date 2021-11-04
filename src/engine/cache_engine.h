@@ -8,6 +8,8 @@
 
 struct ocf_thread_priv;
 struct ocf_request;
+struct ocf_queueable_entity;
+typedef struct ocf_queueable_entity ocf_queueable_t;
 
 #define LOOKUP_HIT 5
 #define LOOKUP_MISS 6
@@ -33,9 +35,9 @@ typedef enum {
 } ocf_req_cache_mode_t;
 
 struct ocf_io_if {
-	int (*read)(struct ocf_request *req);
+	int (*read)(ocf_queueable_t *req);
 
-	int (*write)(struct ocf_request *req);
+	int (*write)(ocf_queueable_t *req);
 
 	const char *name;
 };
@@ -66,7 +68,7 @@ static inline bool ocf_req_cache_mode_has_lazy_write(ocf_req_cache_mode_t mode)
 
 bool ocf_fallback_pt_is_on(ocf_cache_t cache);
 
-struct ocf_request *ocf_engine_pop_req(struct ocf_queue *q);
+struct ocf_queueable_entity *ocf_engine_pop_req(struct ocf_queue *q);
 
 int ocf_engine_hndl_req(struct ocf_request *req);
 

@@ -50,8 +50,11 @@ static inline void _ocf_read_pt_submit(struct ocf_request *req)
 	ocf_submit_volume_req(&req->core->volume, req, _ocf_read_pt_complete);
 }
 
-int ocf_read_pt_do(struct ocf_request *req)
+int ocf_read_pt_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	/* Get OCF request - increase reference counter */
 	ocf_req_get(req);
 
@@ -85,7 +88,7 @@ int ocf_read_pt_do(struct ocf_request *req)
 
 	/* Update statistics */
 	ocf_engine_update_block_stats(req);
-	ocf_core_stats_request_pt_update(req->core, req->part_id, req->rw,
+	ocf_core_stats_request_pt_update(req->core, req->part_id, req->queueable.rw,
 			req->info.hit_no, req->core_line_count);
 
 	/* Put OCF request - decrease reference counter */
@@ -99,8 +102,10 @@ static const struct ocf_io_if _io_if_pt_resume = {
 	.write = ocf_read_pt_do,
 };
 
-int ocf_read_pt(struct ocf_request *req)
+int ocf_read_pt(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	bool use_cache = false;
 	int lock = OCF_LOCK_NOT_ACQUIRED;
 
@@ -112,7 +117,7 @@ int ocf_read_pt(struct ocf_request *req)
 	ocf_req_get(req);
 
 	/* Set resume io_if */
-	req->io_if = &_io_if_pt_resume;
+	req->queueable.io_if = &_io_if_pt_resume;
 
 	ocf_req_hash(req);
 	ocf_hb_req_prot_lock_rd(req);
@@ -146,12 +151,12 @@ int ocf_read_pt(struct ocf_request *req)
 		 * because of this force read data from cache
 		 */
 		ocf_req_clear(req);
-		ocf_get_io_if(ocf_cache_mode_wt)->read(req);
+		ocf_get_io_if(ocf_cache_mode_wt)->read(opaque);
 	} else {
 		if (lock >= 0) {
 			if (lock == OCF_LOCK_ACQUIRED) {
 				/* Lock acquired perform read off operations */
-				ocf_read_pt_do(req);
+				ocf_read_pt_do(opaque);
 			} else {
 				/* WR lock was not acquired, need to wait for resume */
 				OCF_DEBUG_RQ(req, "NO LOCK");
@@ -171,6 +176,6 @@ int ocf_read_pt(struct ocf_request *req)
 
 void ocf_engine_push_req_front_pt(struct ocf_request *req)
 {
-	ocf_engine_push_req_front_if(req, &_io_if_pt_resume, true);
+	ocf_engine_push_req_front_if(&req->queueable, &_io_if_pt_resume, true);
 }
 

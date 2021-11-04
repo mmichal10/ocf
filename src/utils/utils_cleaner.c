@@ -201,7 +201,7 @@ static void _ocf_cleaner_complete_req(struct ocf_request *req)
 static void _ocf_cleaner_on_resume(struct ocf_request *req)
 {
 	OCF_DEBUG_TRACE(req->cache);
-	ocf_engine_push_req_front(req, true);
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
 /*
@@ -273,13 +273,16 @@ static void _ocf_cleaner_flush_cache_io_end(struct ocf_io *io, int error)
 	ocf_io_put(io);
 }
 
-static int _ocf_cleaner_fire_flush_cache(struct ocf_request *req)
+static int _ocf_cleaner_fire_flush_cache(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_io *io;
 
 	OCF_DEBUG_TRACE(req->cache);
 
-	io = ocf_new_cache_io(req->cache, req->io_queue, 0, 0, OCF_WRITE, 0, 0);
+	io = ocf_new_cache_io(req->cache, req->queueable.io_queue, 0, 0,
+			OCF_WRITE, 0, 0);
 	if (!io) {
 		ocf_metadata_error(req->cache);
 		req->error = -OCF_ERR_NO_MEM;
@@ -309,12 +312,14 @@ static void _ocf_cleaner_metadata_io_end(struct ocf_request *req, int error)
 
 	OCF_DEBUG_MSG(req->cache, "Metadata flush finished");
 
-	req->io_if = &_io_if_flush_cache;
-	ocf_engine_push_req_front(req, true);
+	req->queueable.io_if = &_io_if_flush_cache;
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
-static int _ocf_cleaner_update_metadata(struct ocf_request *req)
+static int _ocf_cleaner_update_metadata(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_cache *cache = req->cache;
 	const struct ocf_map_info *iter = req->map;
 	uint32_t i;
@@ -393,8 +398,8 @@ static void _ocf_cleaner_flush_cores_io_end(struct ocf_map_info *map,
 	/*
 	 * All core writes done, switch to post cleaning activities
 	 */
-	req->io_if = &_io_if_update_metadata;
-	ocf_engine_push_req_front(req, true);
+	req->queueable.io_if = &_io_if_update_metadata;
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
 static void _ocf_cleaner_flush_cores_io_cmpl(struct ocf_io *io, int error)
@@ -404,8 +409,10 @@ static void _ocf_cleaner_flush_cores_io_cmpl(struct ocf_io *io, int error)
 	ocf_io_put(io);
 }
 
-static int _ocf_cleaner_fire_flush_cores(struct ocf_request *req)
+static int _ocf_cleaner_fire_flush_cores(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	uint32_t i;
 	ocf_core_id_t core_id = OCF_CORE_MAX;
 	struct ocf_cache *cache = req->cache;
@@ -436,7 +443,7 @@ static int _ocf_cleaner_fire_flush_cores(struct ocf_request *req)
 		env_atomic_inc(&req->req_remaining);
 
 		core = ocf_cache_get_core(cache, core_id);
-		io = ocf_new_core_io(core, req->io_queue, 0, 0,
+		io = ocf_new_core_io(core, req->queueable.io_queue, 0, 0,
 				OCF_WRITE, 0, 0);
 		if (!io) {
 			_ocf_cleaner_flush_cores_io_end(iter, req, -OCF_ERR_NO_MEM);
@@ -470,8 +477,8 @@ static void _ocf_cleaner_core_io_end(struct ocf_request *req)
 	 * All cache read requests done, now we can submit writes to cores,
 	 * Move processing to thread, where IO will be (and can be) submitted
 	 */
-	req->io_if = &_io_if_flush_cores;
-	ocf_engine_push_req_front(req, true);
+	req->queueable.io_if = &_io_if_flush_cores;
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
 static void _ocf_cleaner_core_io_cmpl(struct ocf_io *io, int error)
@@ -507,7 +514,7 @@ static void _ocf_cleaner_core_io_for_dirty_range(struct ocf_request *req,
 	offset = (ocf_line_size(cache) * iter->hash)
 			+ SECTORS_TO_BYTES(begin);
 
-	io = ocf_new_core_io(core, req->io_queue, addr,
+	io = ocf_new_core_io(core, req->queueable.io_queue, addr,
 			SECTORS_TO_BYTES(end - begin), OCF_WRITE, part_id, 0);
 	if (!io)
 		goto error;
@@ -579,8 +586,10 @@ static void _ocf_cleaner_core_submit_io(struct ocf_request *req,
 		_ocf_cleaner_core_io_for_dirty_range(req, iter, dirty_start, i);
 }
 
-static int _ocf_cleaner_fire_core(struct ocf_request *req)
+static int _ocf_cleaner_fire_core(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	uint32_t i;
 	struct ocf_map_info *iter;
 	ocf_cache_t cache = req->cache;
@@ -633,8 +642,8 @@ static void _ocf_cleaner_cache_io_end(struct ocf_request *req)
 	 * All cache read requests done, now we can submit writes to cores,
 	 * Move processing to thread, where IO will be (and can be) submitted
 	 */
-	req->io_if = &_io_if_fire_core;
-	ocf_engine_push_req_front(req, true);
+	req->queueable.io_if = &_io_if_fire_core;
+	ocf_engine_push_req_front(&req->queueable, true);
 
 	OCF_DEBUG_MSG(req->cache, "Cache reads finished");
 }
@@ -660,8 +669,10 @@ static void _ocf_cleaner_cache_io_cmpl(struct ocf_io *io, int error)
  * cleaner - Traverse cache lines to be cleaned, detect sequential IO, and
  * perform cache reads and core writes
  */
-static int _ocf_cleaner_fire_cache(struct ocf_request *req)
+static int _ocf_cleaner_fire_cache(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	ocf_cache_t cache = req->cache;
 	ocf_core_t core;
 	uint32_t i;
@@ -693,7 +704,7 @@ static int _ocf_cleaner_fire_cache(struct ocf_request *req)
 
 		part_id = ocf_metadata_get_partition_id(cache, iter->coll_idx);
 
-		io = ocf_new_cache_io(cache, req->io_queue,
+		io = ocf_new_cache_io(cache, req->queueable.io_queue,
 				addr, ocf_line_size(cache),
 				OCF_READ, part_id, 0);
 		if (!io) {
@@ -733,7 +744,7 @@ static int _ocf_cleaner_fire(struct ocf_request *req)
 {
 	int result;
 
-	req->io_if = &_io_if_fire_cache;
+	req->queueable.io_if = &_io_if_fire_cache;
 
 	/* Handle cache lines locks */
 	result = _ocf_cleaner_cache_line_lock(req);
@@ -741,7 +752,7 @@ static int _ocf_cleaner_fire(struct ocf_request *req)
 	if (result >= 0) {
 		if (result == OCF_LOCK_ACQUIRED) {
 			OCF_DEBUG_MSG(req->cache, "Lock acquired");
-			_ocf_cleaner_fire_cache(req);
+			_ocf_cleaner_fire_cache(&req->queueable);
 		} else {
 			OCF_DEBUG_MSG(req->cache, "NO Lock");
 		}

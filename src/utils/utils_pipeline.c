@@ -20,8 +20,10 @@ struct ocf_pipeline {
 	void *priv;
 };
 
-static int _ocf_pipeline_run_step(struct ocf_request *req)
+static int _ocf_pipeline_run_step(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	ocf_pipeline_t pipeline = req->priv;
 	struct ocf_pipeline_step *step;
 	ocf_pipeline_arg_t arg;
@@ -94,7 +96,7 @@ int ocf_pipeline_create(ocf_pipeline_t *pipeline, ocf_cache_t cache,
 	tmp_pipeline->error = 0;
 
 	req->info.internal = true;
-	req->io_if = &_io_if_pipeline;
+	req->queueable.io_if = &_io_if_pipeline;
 	req->priv = tmp_pipeline;
 
 	*pipeline = tmp_pipeline;
@@ -120,12 +122,12 @@ void *ocf_pipeline_get_priv(ocf_pipeline_t pipeline)
 
 void ocf_pipeline_next(ocf_pipeline_t pipeline)
 {
-	ocf_engine_push_req_front(pipeline->req, false);
+	ocf_engine_push_req_front(&pipeline->req->queueable, false);
 }
 
 void ocf_pipeline_finish(ocf_pipeline_t pipeline, int error)
 {
 	pipeline->finish = true;
 	pipeline->error = error;
-	ocf_engine_push_req_front(pipeline->req, false);
+	ocf_engine_push_req_front(&pipeline->req->queueable, false);
 }

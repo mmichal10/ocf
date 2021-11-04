@@ -32,8 +32,11 @@ def __io(io, queue, address, size, data, direction):
     io.set_data(data, 0)
     completion = OcfCompletion([("err", c_int)])
     io.callback = completion.callback
+    print("IO to submit\n")
     io.submit()
+    print("IO submited\n")
     completion.wait()
+    print("IO completion\n")
     return int(completion.results["err"])
 
 
@@ -371,11 +374,13 @@ def test_read_data_consistency(pyocf_ctx, cacheline_size, cache_mode, rand_seed)
             START = start * SECTOR_SIZE
             END = end * SECTOR_SIZE
             size = (end - start + 1) * SECTOR_SIZE
+            print("IO to exp obj")
             assert 0 == io_to_exp_obj(
                 core, WORKSET_OFFSET + START, size, result_b, START, IoDir.READ
             ), "error reading in {}: region_state={}, start={}, end={}, insert_order={}".format(
                 cache_mode, region_state, start, end, insert_order
             )
+            print("IO finished")
 
             # verify read data
             for sec in range(start, end + 1):

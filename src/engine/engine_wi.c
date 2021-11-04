@@ -16,15 +16,17 @@
 #define OCF_ENGINE_DEBUG_IO_NAME "wi"
 #include "engine_debug.h"
 
-static int ocf_write_wi_update_and_flush_metadata(struct ocf_request *req);
+static int ocf_write_wi_update_and_flush_metadata(ocf_queueable_t *opaque);
 
 static const struct ocf_io_if _io_if_wi_update_metadata = {
 		.read = ocf_write_wi_update_and_flush_metadata,
 		.write = ocf_write_wi_update_and_flush_metadata,
 };
 
-int _ocf_write_wi_next_pass(struct ocf_request *req)
+int _ocf_write_wi_next_pass(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	ocf_req_unlock_wr(ocf_cache_line_concurrency(req->cache), req);
 
 	if (req->wi_second_pass) {
@@ -45,7 +47,7 @@ int _ocf_write_wi_next_pass(struct ocf_request *req)
 	   again with req->wi_second_pass set to indicate that this
 	   is a second pass (core write should be skipped). */
 	req->wi_second_pass = true;
-	ocf_write_wi(req);
+	ocf_write_wi(opaque);
 
 	return 0;
 }
@@ -67,7 +69,7 @@ static void _ocf_write_wi_io_flush_metadata(struct ocf_request *req, int error)
 
 	if (!req->error && !req->wi_second_pass && ocf_engine_is_miss(req)) {
 		/* need another pass */
-		ocf_engine_push_req_front_if(req, &_io_if_wi_next_pass,
+		ocf_engine_push_req_front_if(&req->queueable, &_io_if_wi_next_pass,
 				true);
 		return;
 	}
@@ -82,13 +84,15 @@ static void _ocf_write_wi_io_flush_metadata(struct ocf_request *req, int error)
 	ocf_req_put(req);
 }
 
-static int ocf_write_wi_update_and_flush_metadata(struct ocf_request *req)
+static int ocf_write_wi_update_and_flush_metadata(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_cache *cache = req->cache;
 
 	if (!ocf_engine_mapped_count(req)) {
 		/* jump directly to next pass */
-		_ocf_write_wi_next_pass(req);
+		_ocf_write_wi_next_pass(opaque);
 		return 0;
 	}
 
@@ -134,13 +138,16 @@ static void _ocf_write_wi_core_complete(struct ocf_request *req, int error)
 
 		ocf_req_put(req);
 	} else {
-		ocf_engine_push_req_front_if(req, &_io_if_wi_update_metadata,
+		ocf_engine_push_req_front_if(&req->queueable, &_io_if_wi_update_metadata,
 				true);
 	}
 }
 
-static int _ocf_write_wi_core_write(struct ocf_request *req)
+static int _ocf_write_wi_core_write(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	/* Get OCF request - increase reference counter */
 	ocf_req_get(req);
 
@@ -154,7 +161,7 @@ static int _ocf_write_wi_core_write(struct ocf_request *req)
 
 	/* Update statistics */
 	ocf_engine_update_block_stats(req);
-	ocf_core_stats_request_pt_update(req->core, req->part_id, req->rw,
+	ocf_core_stats_request_pt_update(req->core, req->part_id, req->queueable.rw,
 			req->info.hit_no, req->core_line_count);
 
 	/* Put OCF request - decrease reference counter */
@@ -166,7 +173,7 @@ static int _ocf_write_wi_core_write(struct ocf_request *req)
 static void _ocf_write_wi_on_resume(struct ocf_request *req)
 {
 	OCF_DEBUG_RQ(req, "On resume");
-	ocf_engine_push_req_front(req, true);
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
 static const struct ocf_io_if _io_if_wi_core_write = {
@@ -174,8 +181,11 @@ static const struct ocf_io_if _io_if_wi_core_write = {
 	.write = _ocf_write_wi_core_write,
 };
 
-int ocf_write_wi(struct ocf_request *req)
+int ocf_write_wi(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	int lock = OCF_LOCK_NOT_ACQUIRED;
 
 	OCF_DEBUG_TRACE(req->cache);
@@ -186,7 +196,7 @@ int ocf_write_wi(struct ocf_request *req)
 	ocf_req_get(req);
 
 	/* Set resume io_if */
-	req->io_if = req->wi_second_pass ?
+	req->queueable.io_if = req->wi_second_pass ?
 			&_io_if_wi_update_metadata :
 			&_io_if_wi_core_write;
 
@@ -209,7 +219,7 @@ int ocf_write_wi(struct ocf_request *req)
 
 	if (lock >= 0) {
 		if (lock == OCF_LOCK_ACQUIRED) {
-			req->io_if->write(req);
+			req->queueable.io_if->write(opaque);
 		} else {
 			/* WR lock was not acquired, need to wait for resume */
 			OCF_DEBUG_RQ(req, "NO LOCK");

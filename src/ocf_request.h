@@ -93,10 +93,26 @@ struct ocf_req_discard_info {
 		/*!< Number of processed sector during discard operation */
 };
 
+struct ocf_queueable_entity {
+	ocf_queue_t io_queue;
+
+	struct list_head list;
+
+	const struct ocf_io_if *io_if;
+
+	uint8_t rw : 1;
+	/*!< Indicator of IO direction - Read/Write */
+
+};
+
+typedef struct ocf_queueable_entity ocf_queueable_t;
+
 /**
  * @brief OCF IO request
  */
 struct ocf_request {
+	ocf_queueable_t queueable;
+
 	struct ocf_io_internal ioi;
 	/*!< OCF IO associated with request */
 
@@ -128,7 +144,7 @@ struct ocf_request {
 	ocf_core_t core;
 	/*!< Handle to core instance */
 
-	const struct ocf_io_if *io_if;
+	//const struct ocf_io_if *io_if;
 	/*!< IO interface */
 
 	void *priv;
@@ -167,7 +183,7 @@ struct ocf_request {
 	ocf_part_id_t part_id;
 	/*!< Targeted partition of requests */
 
-	uint8_t rw : 1;
+	//uint8_t rw : 1;
 	/*!< Indicator of IO direction - Read/Write */
 
 	uint8_t d2c : 1;
@@ -202,10 +218,10 @@ struct ocf_request {
 	uint64_t timestamp;
 	/*!< Tracing timestamp */
 
-	ocf_queue_t io_queue;
+	//ocf_queue_t io_queue;
 	/*!< I/O queue handle for which request should be submitted */
 
-	struct list_head list;
+	//struct list_head list;
 	/*!< List item for OCF IO thread workers */
 
 	struct ocf_req_info info;

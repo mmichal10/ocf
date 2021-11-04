@@ -548,8 +548,8 @@ static int _raw_ram_flush_do_asynch(ocf_cache_t cache,
 
 		env_atomic_inc(&ctx->flush_req_cnt);
 
-		result  |= metadata_io_write_i_asynch(cache, req->io_queue, ctx,
-				raw->ssd_pages_offset + start_page, count,
+		result  |= metadata_io_write_i_asynch(cache, req->queueable.io_queue,
+				ctx, raw->ssd_pages_offset + start_page, count,
 				req->ioi.io.flags,
 				_raw_ram_flush_do_asynch_fill,
 				_raw_ram_flush_do_asynch_io_complete,

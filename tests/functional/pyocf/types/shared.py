@@ -92,8 +92,10 @@ class OcfCompletion:
     def callback(self):
         @CFUNCTYPE(c_void_p, *self.results.arg_types)
         def complete(*args):
+            print("ocf completion")
             self.results.results = args
             self.e.set()
+            print("ocf completion already set")
 
         return complete
 

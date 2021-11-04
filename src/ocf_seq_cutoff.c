@@ -206,17 +206,17 @@ bool ocf_core_seq_cutoff_check(ocf_core_t core, struct ocf_request *req)
 			return false;
 	}
 
-	env_rwlock_read_lock(&req->io_queue->seq_cutoff->lock);
-	result = ocf_core_seq_cutoff_base_check(req->io_queue->seq_cutoff,
-			req->byte_position, req->byte_length, req->rw,
+	env_rwlock_read_lock(&req->queueable.io_queue->seq_cutoff->lock);
+	result = ocf_core_seq_cutoff_base_check(req->queueable.io_queue->seq_cutoff,
+			req->byte_position, req->byte_length, req->queueable.rw,
 			threshold, &queue_stream);
-	env_rwlock_read_unlock(&req->io_queue->seq_cutoff->lock);
+	env_rwlock_read_unlock(&req->queueable.io_queue->seq_cutoff->lock);
 	if (queue_stream)
 		return result;
 
 	env_rwlock_read_lock(&core->seq_cutoff->lock);
 	result = ocf_core_seq_cutoff_base_check(core->seq_cutoff,
-			req->byte_position, req->byte_length, req->rw,
+			req->byte_position, req->byte_length, req->queueable.rw,
 			threshold, &core_stream);
 	env_rwlock_read_unlock(&core->seq_cutoff->lock);
 
@@ -315,7 +315,7 @@ void ocf_core_seq_cutoff_update(ocf_core_t core, struct ocf_request *req)
 	if (req->seq_cutoff_core || promote) {
 		env_rwlock_write_lock(&core->seq_cutoff->lock);
 		stream = ocf_core_seq_cutoff_base_update(core->seq_cutoff,
-				req->byte_position, req->byte_length, req->rw,
+				req->byte_position, req->byte_length, req->queueable.rw,
 				promote);
 		env_rwlock_write_unlock(&core->seq_cutoff->lock);
 
@@ -323,10 +323,10 @@ void ocf_core_seq_cutoff_update(ocf_core_t core, struct ocf_request *req)
 			return;
 	}
 
-	env_rwlock_write_lock(&req->io_queue->seq_cutoff->lock);
-	stream = ocf_core_seq_cutoff_base_update(req->io_queue->seq_cutoff,
-			req->byte_position, req->byte_length, req->rw, true);
-	env_rwlock_write_unlock(&req->io_queue->seq_cutoff->lock);
+	env_rwlock_write_lock(&req->queueable.io_queue->seq_cutoff->lock);
+	stream = ocf_core_seq_cutoff_base_update(req->queueable.io_queue->seq_cutoff,
+			req->byte_position, req->byte_length, req->queueable.rw, true);
+	env_rwlock_write_unlock(&req->queueable.io_queue->seq_cutoff->lock);
 
 	if (stream->bytes >= threshold)
 		promote = true;
@@ -336,10 +336,10 @@ void ocf_core_seq_cutoff_update(ocf_core_t core, struct ocf_request *req)
 
 	if (promote) {
 		env_rwlock_write_lock(&core->seq_cutoff->lock);
-		env_rwlock_write_lock(&req->io_queue->seq_cutoff->lock);
+		env_rwlock_write_lock(&req->queueable.io_queue->seq_cutoff->lock);
 		ocf_core_seq_cutoff_base_promote(core->seq_cutoff,
-				req->io_queue->seq_cutoff, stream);
-		env_rwlock_write_unlock(&req->io_queue->seq_cutoff->lock);
+				req->queueable.io_queue->seq_cutoff, stream);
+		env_rwlock_write_unlock(&req->queueable.io_queue->seq_cutoff->lock);
 		env_rwlock_write_unlock(&core->seq_cutoff->lock);
 	}
 }

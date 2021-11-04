@@ -116,10 +116,10 @@ const struct ocf_io_if *ocf_get_io_if(ocf_req_cache_mode_t req_cache_mode)
 	return cache_mode_io_if_map[req_cache_mode];
 }
 
-struct ocf_request *ocf_engine_pop_req(ocf_queue_t q)
+struct ocf_queueable_entity *ocf_engine_pop_req(ocf_queue_t q)
 {
 	unsigned long lock_flags = 0;
-	struct ocf_request *req;
+	struct ocf_queueable_entity *req;
 
 	OCF_CHECK_NULL(q);
 
@@ -134,7 +134,7 @@ struct ocf_request *ocf_engine_pop_req(ocf_queue_t q)
 	}
 
 	/* Get the first request and remove it from the list */
-	req = list_first_entry(&q->io_list, struct ocf_request, list);
+	req = list_first_entry(&q->io_list, struct ocf_queueable_entity, list);
 
 	env_atomic_dec(&q->io_no);
 	list_del(&req->list);
@@ -192,7 +192,7 @@ void ocf_resolve_effective_cache_mode(ocf_cache_t cache,
 	if (!ocf_cache_mode_is_valid(req->cache_mode))
 		req->cache_mode = cache->conf_meta->cache_mode;
 
-	if (req->rw == OCF_WRITE &&
+	if (req->queueable.rw == OCF_WRITE &&
 	    ocf_req_cache_mode_has_lazy_write(req->cache_mode) &&
 	    ocf_req_set_dirty(req)) {
 		req->cache_mode = ocf_req_cache_mode_wt;
@@ -205,8 +205,8 @@ int ocf_engine_hndl_req(struct ocf_request *req)
 
 	OCF_CHECK_NULL(cache);
 
-	req->io_if = ocf_get_io_if(req->cache_mode);
-	if (!req->io_if)
+	req->queueable.io_if = ocf_get_io_if(req->cache_mode);
+	if (!req->queueable.io_if)
 		return -OCF_ERR_INVAL;
 
 	ocf_req_get(req);
@@ -215,7 +215,7 @@ int ocf_engine_hndl_req(struct ocf_request *req)
 	 * to into OCF workers
 	 */
 
-	ocf_engine_push_req_back(req, true);
+	ocf_engine_push_req_back(&req->queueable, true);
 
 	return 0;
 }
@@ -231,12 +231,12 @@ int ocf_engine_hndl_fast_req(struct ocf_request *req)
 
 	ocf_req_get(req);
 
-	switch (req->rw) {
+	switch (req->queueable.rw) {
 	case OCF_READ:
-		ret = io_if->read(req);
+		ret = io_if->read(&req->queueable);
 		break;
 	case OCF_WRITE:
-		ret = io_if->write(req);
+		ret = io_if->write(&req->queueable);
 		break;
 	default:
 		ret = OCF_FAST_PATH_NO;
@@ -250,10 +250,10 @@ int ocf_engine_hndl_fast_req(struct ocf_request *req)
 
 static void ocf_engine_hndl_2dc_req(struct ocf_request *req)
 {
-	if (OCF_READ == req->rw)
-		IO_IFS[OCF_IO_D2C_IF].read(req);
-	else if (OCF_WRITE == req->rw)
-		IO_IFS[OCF_IO_D2C_IF].write(req);
+	if (OCF_READ == req->queueable.rw)
+		IO_IFS[OCF_IO_D2C_IF].read(&req->queueable);
+	else if (OCF_WRITE == req->queueable.rw)
+		IO_IFS[OCF_IO_D2C_IF].write(&req->queueable);
 	else
 		ENV_BUG();
 }
@@ -267,10 +267,10 @@ void ocf_engine_hndl_discard_req(struct ocf_request *req)
 		return;
 	}
 
-	if (OCF_READ == req->rw)
-		IO_IFS[OCF_IO_DISCARD_IF].read(req);
-	else if (OCF_WRITE == req->rw)
-		IO_IFS[OCF_IO_DISCARD_IF].write(req);
+	if (OCF_READ == req->queueable.rw)
+		IO_IFS[OCF_IO_DISCARD_IF].read(&req->queueable);
+	else if (OCF_WRITE == req->queueable.rw)
+		IO_IFS[OCF_IO_DISCARD_IF].write(&req->queueable);
 	else
 		ENV_BUG();
 }
@@ -280,9 +280,9 @@ void ocf_engine_hndl_ops_req(struct ocf_request *req)
 	ocf_req_get(req);
 
 	if (req->d2c)
-		req->io_if = &IO_IFS[OCF_IO_D2C_IF];
+		req->queueable.io_if = &IO_IFS[OCF_IO_D2C_IF];
 	else
-		req->io_if = &IO_IFS[OCF_IO_OPS_IF];
+		req->queueable.io_if = &IO_IFS[OCF_IO_OPS_IF];
 
-	ocf_engine_push_req_back(req, true);
+	ocf_engine_push_req_back(&req->queueable, true);
 }

@@ -360,7 +360,7 @@ static void raw_dynamic_load_all_complete(
 	env_vfree(context);
 }
 
-static int raw_dynamic_load_all_update(struct ocf_request *req);
+static int raw_dynamic_load_all_update(ocf_queueable_t *opaque);
 
 static const struct ocf_io_if _io_if_raw_dynamic_load_all_update = {
 	.read = raw_dynamic_load_all_update,
@@ -378,12 +378,14 @@ static void raw_dynamic_load_all_read_end(struct ocf_io *io, int error)
 		return;
 	}
 
-	context->req->io_if = &_io_if_raw_dynamic_load_all_update;
-	ocf_engine_push_req_front(context->req, true);
+	context->req->queueable.io_if = &_io_if_raw_dynamic_load_all_update;
+	ocf_engine_push_req_front(&context->req->queueable, true);
 }
 
-static int raw_dynamic_load_all_read(struct ocf_request *req)
+static int raw_dynamic_load_all_read(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct raw_dynamic_load_all_context *context = req->priv;
 	struct ocf_metadata_raw *raw = context->raw;
 	uint64_t count;
@@ -393,7 +395,7 @@ static int raw_dynamic_load_all_read(struct ocf_request *req)
 			raw->ssd_pages - context->i_page);
 
 	/* Allocate IO */
-	context->io = ocf_new_cache_io(context->cache, req->io_queue,
+	context->io = ocf_new_cache_io(context->cache, req->queueable.io_queue,
 		PAGES_TO_BYTES(raw->ssd_pages_offset + context->i_page),
 		PAGES_TO_BYTES(count), OCF_READ, 0, 0);
 
@@ -423,8 +425,10 @@ static const struct ocf_io_if _io_if_raw_dynamic_load_all_read = {
 	.write = raw_dynamic_load_all_read,
 };
 
-static int raw_dynamic_load_all_update(struct ocf_request *req)
+static int raw_dynamic_load_all_update(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct raw_dynamic_load_all_context *context = req->priv;
 	struct ocf_metadata_raw *raw = context->raw;
 	ocf_cache_t cache = context->cache;
@@ -445,8 +449,8 @@ static int raw_dynamic_load_all_update(struct ocf_request *req)
 		return 0;
 	}
 
-	context->req->io_if = &_io_if_raw_dynamic_load_all_read;
-	ocf_engine_push_req_front(context->req, true);
+	context->req->queueable.io_if = &_io_if_raw_dynamic_load_all_read;
+	ocf_engine_push_req_front(&context->req->queueable, true);
 
 	return 0;
 }
@@ -488,9 +492,9 @@ void raw_dynamic_load_all(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 
 	context->req->info.internal = true;
 	context->req->priv = context;
-	context->req->io_if = &_io_if_raw_dynamic_load_all_read;
+	context->req->queueable.io_if = &_io_if_raw_dynamic_load_all_read;
 
-	ocf_engine_push_req_front(context->req, true);
+	ocf_engine_push_req_front(&context->req->queueable, true);
 	return;
 
 err_req:

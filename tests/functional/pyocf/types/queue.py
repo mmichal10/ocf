@@ -25,11 +25,14 @@ class Queue:
 
 def io_queue_run(*, queue: Queue, kick: Condition, stop: Event):
     def wait_predicate():
+        print("Wait predicate")
         return stop.is_set() or OcfLib.getInstance().ocf_queue_pending_io(queue)
 
     while True:
         with kick:
+            print("Start waiting")
             kick.wait_for(wait_predicate)
+            print("Waiting finished")
 
         OcfLib.getInstance().ocf_queue_run(queue)
 

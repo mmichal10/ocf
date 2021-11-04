@@ -216,6 +216,8 @@ static void ocf_req_complete(struct ocf_request *req, int error)
 
 	dec_counter_if_req_was_dirty(req);
 
+	ocf_cache_log(req->cache, log_crit, "Req complete\n");
+
 	/* Invalidate OCF IO, it is not valid after completion */
 	ocf_io_put(&req->ioi.io);
 }
@@ -249,9 +251,12 @@ static int ocf_core_submit_io_fast(struct ocf_io *io, struct ocf_request *req,
 		req->cache_mode = ocf_req_cache_mode_fast;
 	}
 
+	ocf_cache_log(cache, log_crit, "Submitting fast\n");
 	fast = ocf_engine_hndl_fast_req(req);
 	if (fast != OCF_FAST_PATH_NO)
 		return 0;
+
+	ocf_cache_log(cache, log_crit, "Failed to submit fast\n");
 
 	req->cache_mode = original_cache_mode;
 	return -OCF_ERR_IO;
@@ -275,6 +280,8 @@ void ocf_core_volume_submit_io(struct ocf_io *io)
 	req = ocf_io_to_req(io);
 	core = ocf_volume_to_core(ocf_io_get_volume(io));
 	cache = ocf_core_get_cache(core);
+
+	ocf_cache_log(cache, log_crit, "Submit core volume io\n");
 
 	if (unlikely(!env_bit_test(ocf_cache_state_running,
 					&cache->cache_state))) {

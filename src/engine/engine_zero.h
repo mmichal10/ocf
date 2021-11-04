@@ -6,6 +6,6 @@
 #ifndef ENGINE_ZERO_H_
 #define ENGINE_ZERO_H_
 
-void ocf_engine_zero_line(struct ocf_request *req);
+void ocf_engine_zero_line(ocf_queueable_t *opaque);
 
 #endif /* ENGINE_ZERO_H_ */

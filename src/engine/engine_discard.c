@@ -18,10 +18,10 @@
 #define OCF_ENGINE_DEBUG_IO_NAME "discard"
 #include "engine_debug.h"
 
-static int _ocf_discard_step_do(struct ocf_request *req);
-static int _ocf_discard_step(struct ocf_request *req);
-static int _ocf_discard_flush_cache(struct ocf_request *req);
-static int _ocf_discard_core(struct ocf_request *req);
+static int _ocf_discard_step_do(ocf_queueable_t *opaque);
+static int _ocf_discard_step(ocf_queueable_t *opaque);
+static int _ocf_discard_flush_cache(ocf_queueable_t *opaque);
+static int _ocf_discard_core(ocf_queueable_t *opaque);
 
 static const struct ocf_io_if _io_if_discard_step = {
 	.read = _ocf_discard_step,
@@ -60,12 +60,14 @@ static void _ocf_discard_core_complete(struct ocf_io *io, int error)
 	ocf_io_put(io);
 }
 
-static int _ocf_discard_core(struct ocf_request *req)
+static int _ocf_discard_core(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_io *io;
 	int err;
 
-	io = ocf_volume_new_io(&req->core->volume, req->io_queue,
+	io = ocf_volume_new_io(&req->core->volume, req->queueable.io_queue,
 			SECTORS_TO_BYTES(req->discard.sector),
 			SECTORS_TO_BYTES(req->discard.nr_sects),
 			OCF_WRITE, 0, 0);
@@ -97,17 +99,19 @@ static void _ocf_discard_cache_flush_complete(struct ocf_io *io, int error)
 		return;
 	}
 
-	req->io_if = &_io_if_discard_core;
-	ocf_engine_push_req_front(req, true);
+	req->queueable.io_if = &_io_if_discard_core;
+	ocf_engine_push_req_front(&req->queueable, true);
 
 	ocf_io_put(io);
 }
 
-static int _ocf_discard_flush_cache(struct ocf_request *req)
+static int _ocf_discard_flush_cache(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_io *io;
 
-	io = ocf_volume_new_io(&req->cache->device->volume, req->io_queue,
+	io = ocf_volume_new_io(&req->cache->device->volume, req->queueable.io_queue,
 			0, 0, OCF_WRITE, 0, 0);
 	if (!io) {
 		ocf_metadata_error(req->cache);
@@ -127,13 +131,13 @@ static void _ocf_discard_finish_step(struct ocf_request *req)
 	req->discard.handled += BYTES_TO_SECTORS(req->byte_length);
 
 	if (req->discard.handled < req->discard.nr_sects)
-		req->io_if = &_io_if_discard_step;
+		req->queueable.io_if = &_io_if_discard_step;
 	else if (!req->cache->metadata.is_volatile)
-		req->io_if = &_io_if_discard_flush_cache;
+		req->queueable.io_if = &_io_if_discard_flush_cache;
 	else
-		req->io_if = &_io_if_discard_core;
+		req->queueable.io_if = &_io_if_discard_core;
 
-	ocf_engine_push_req_front(req, true);
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
 static void _ocf_discard_step_complete(struct ocf_request *req, int error)
@@ -158,8 +162,11 @@ static void _ocf_discard_step_complete(struct ocf_request *req, int error)
 	_ocf_discard_finish_step(req);
 }
 
-int _ocf_discard_step_do(struct ocf_request *req)
+int _ocf_discard_step_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	struct ocf_cache *cache = req->cache;
 
 	/* Get OCF request - increase reference counter */
@@ -204,11 +211,13 @@ int _ocf_discard_step_do(struct ocf_request *req)
 static void _ocf_discard_on_resume(struct ocf_request *req)
 {
 	OCF_DEBUG_RQ(req, "On resume");
-	ocf_engine_push_req_front(req, true);
+	ocf_engine_push_req_front(&req->queueable, true);
 }
 
-static int _ocf_discard_step(struct ocf_request *req)
+static int _ocf_discard_step(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	int lock;
 	struct ocf_cache *cache = req->cache;
 
@@ -222,7 +231,7 @@ static int _ocf_discard_step(struct ocf_request *req)
 	req->core_line_last =
 		ocf_bytes_2_lines(cache, req->byte_position + req->byte_length - 1);
 	req->core_line_count = req->core_line_last - req->core_line_first + 1;
-	req->io_if = &_io_if_discard_step_resume;
+	req->queueable.io_if = &_io_if_discard_step_resume;
 
 	ENV_BUG_ON(env_memset(req->map, sizeof(*req->map) * req->core_line_count,
 			0));
@@ -246,7 +255,7 @@ static int _ocf_discard_step(struct ocf_request *req)
 
 	if (lock >= 0) {
 		if (OCF_LOCK_ACQUIRED == lock) {
-			_ocf_discard_step_do(req);
+			_ocf_discard_step_do(opaque);
 		} else {
 			/* WR lock was not acquired, need to wait for resume */
 			OCF_DEBUG_RQ(req, "NO LOCK")
@@ -262,13 +271,16 @@ static int _ocf_discard_step(struct ocf_request *req)
 	return 0;
 }
 
-int ocf_discard(struct ocf_request *req)
+int ocf_discard(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	OCF_DEBUG_TRACE(req->cache);
 
 	ocf_io_start(&req->ioi.io);
 
-	if (req->rw == OCF_READ) {
+	if (req->queueable.rw == OCF_READ) {
 		req->complete(req, -OCF_ERR_INVAL);
 		ocf_req_put(req);
 		return 0;
@@ -277,7 +289,7 @@ int ocf_discard(struct ocf_request *req)
 	/* Get OCF request - increase reference counter */
 	ocf_req_get(req);
 
-	_ocf_discard_step(req);
+	_ocf_discard_step(opaque);
 
 	/* Put OCF request - decrease reference counter */
 	ocf_req_put(req);

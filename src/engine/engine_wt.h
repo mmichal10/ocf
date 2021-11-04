@@ -6,6 +6,6 @@
 #ifndef ENGINE_WT_H_
 #define ENGINE_WT_H_
 
-int ocf_write_wt(struct ocf_request *req);
+int ocf_write_wt(ocf_queueable_t *opaque);
 
 #endif /* ENGINE_WT_H_ */

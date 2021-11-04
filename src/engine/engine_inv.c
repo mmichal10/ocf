@@ -37,8 +37,10 @@ static void _ocf_invalidate_req(struct ocf_request *req, int error)
 	ocf_req_put(req);
 }
 
-static int _ocf_invalidate_do(struct ocf_request *req)
+static int _ocf_invalidate_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	struct ocf_cache *cache = req->cache;
 
 	ENV_BUG_ON(env_atomic_read(&req->req_remaining));
@@ -67,5 +69,5 @@ static const struct ocf_io_if _io_if_invalidate = {
 
 void ocf_engine_invalidate(struct ocf_request *req)
 {
-	ocf_engine_push_req_front_if(req, &_io_if_invalidate, true);
+	ocf_engine_push_req_front_if(&req->queueable, &_io_if_invalidate, true);
 }

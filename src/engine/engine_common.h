@@ -283,32 +283,32 @@ void ocf_engine_update_request_stats(struct ocf_request *req);
 /**
  * @brief Push front OCF request to the OCF thread worker queue
  *
- * @param req OCF request
+ * @param req OCF queueable entity
  * @param allow_sync caller allows for request from queue to be ran immediately
 		from push function in caller context
  */
-void ocf_engine_push_req_back(struct ocf_request *req,
+void ocf_engine_push_req_back(ocf_queueable_t *opaque,
 		bool allow_sync);
 
 /**
  * @brief Push back OCF request to the OCF thread worker queue
  *
- * @param req OCF request
+ * @param req OCF queueable entity
  * @param allow_sync caller allows for request from queue to be ran immediately
 		from push function in caller context
  */
-void ocf_engine_push_req_front(struct ocf_request *req,
+void ocf_engine_push_req_front(ocf_queueable_t *opaque,
 		bool allow_sync);
 
 /**
  * @brief Set interface and push from request to the OCF thread worker queue
  *
- * @param req OCF request
+ * @param req OCF queueable entity
  * @param io_if IO interface
  * @param allow_sync caller allows for request from queue to be ran immediately
 		from push function in caller context
  */
-void ocf_engine_push_req_front_if(struct ocf_request *req,
+void ocf_engine_push_req_front_if(ocf_queueable_t *opaque,
 		const struct ocf_io_if *io_if,
 		bool allow_sync);
 

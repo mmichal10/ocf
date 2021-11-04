@@ -56,12 +56,15 @@ static void _ocf_read_fast_complete(struct ocf_request *req, int error)
 	}
 }
 
-static int _ocf_read_fast_do(struct ocf_request *req)
+static int _ocf_read_fast_do(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
+
 	if (ocf_engine_is_miss(req)) {
 		/* It seams that after resume, now request is MISS, do PT */
 		OCF_DEBUG_RQ(req, "Switching to read PT");
-		ocf_read_pt_do(req);
+		ocf_read_pt_do(opaque);
 		return 0;
 
 	}
@@ -104,8 +107,10 @@ static const struct ocf_io_if _io_if_read_fast_resume = {
 	.write = _ocf_read_fast_do,
 };
 
-int ocf_read_fast(struct ocf_request *req)
+int ocf_read_fast(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	bool hit;
 	int lock = OCF_LOCK_NOT_ACQUIRED;
 	bool part_has_space;
@@ -114,7 +119,7 @@ int ocf_read_fast(struct ocf_request *req)
 	ocf_req_get(req);
 
 	/* Set resume io_if */
-	req->io_if = &_io_if_read_fast_resume;
+	req->queueable.io_if = &_io_if_read_fast_resume;
 
 	/*- Metadata RD access -----------------------------------------------*/
 
@@ -146,7 +151,7 @@ int ocf_read_fast(struct ocf_request *req)
 				OCF_DEBUG_RQ(req, "NO LOCK");
 			} else {
 				/* Lock was acquired can perform IO */
-				_ocf_read_fast_do(req);
+				_ocf_read_fast_do(opaque);
 			}
 		} else {
 			OCF_DEBUG_RQ(req, "LOCK ERROR");
@@ -176,8 +181,10 @@ static const struct ocf_io_if _io_if_write_fast_resume = {
 	.write = ocf_write_wb_do,
 };
 
-int ocf_write_fast(struct ocf_request *req)
+int ocf_write_fast(ocf_queueable_t *opaque)
 {
+	struct ocf_request *req =
+		container_of(opaque, struct ocf_request, queueable);
 	bool mapped;
 	int lock = OCF_LOCK_NOT_ACQUIRED;
 	int part_has_space = false;
@@ -186,7 +193,7 @@ int ocf_write_fast(struct ocf_request *req)
 	ocf_req_get(req);
 
 	/* Set resume io_if */
-	req->io_if = &_io_if_write_fast_resume;
+	req->queueable.io_if = &_io_if_write_fast_resume;
 
 	/*- Metadata RD access -----------------------------------------------*/
 
@@ -218,7 +225,7 @@ int ocf_write_fast(struct ocf_request *req)
 				OCF_DEBUG_RQ(req, "NO LOCK");
 			} else {
 				/* Lock was acquired can perform IO */
-				ocf_write_wb_do(req);
+				ocf_write_wb_do(opaque);
 			}
 		} else {
 			OCF_DEBUG_RQ(req, "Fast path lock failure");
