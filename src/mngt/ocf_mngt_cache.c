@@ -26,6 +26,10 @@
 #include "../cleaning/cleaning.h"
 #include "../promotion/ops.h"
 
+
+#include "../concurrency/ocf_pio_concurrency.h"
+#include "../metadata/metadata_internal.h"
+
 #define OCF_ASSERT_PLUGGED(cache) ENV_BUG_ON(!(cache)->device)
 
 #define DIRTY_SHUTDOWN_ERROR_MSG "Please use --load option to restore " \
