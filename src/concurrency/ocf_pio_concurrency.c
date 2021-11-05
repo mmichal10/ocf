@@ -10,47 +10,20 @@
 #include "../utils/utils_alock.h"
 #include "../utils/utils_cache_line.h"
 
-static ocf_cache_line_t ocf_pio_lock_get_entry(
-		struct ocf_alock *alock, struct ocf_request *req,
-		unsigned index)
-{
-	return index;
-}
-
 static int ocf_pio_lock_fast(struct ocf_alock *alock,
 		struct ocf_request *req, int rw)
 {
-	ocf_cache_line_t entry;
+	ocf_cache_line_t entry = req->byte_position;;
 	int ret = OCF_LOCK_ACQUIRED;
-	int32_t i;
+	int32_t id = 0;
 	ENV_BUG_ON(rw != OCF_WRITE);
 
-	for (i = 0; i < req->core_line_count; i++) {
-		entry = ocf_pio_lock_get_entry(alock, req, i);
-		ENV_BUG_ON(ocf_alock_is_index_locked(alock, req, i));
+	ENV_BUG_ON(ocf_alock_is_index_locked(alock, req, id));
 
-		if (ocf_alock_trylock_entry_wr(alock, entry)) {
-			/* cache entry locked */
-			ocf_alock_mark_index_locked(alock, req, i, true);
-		} else {
-			/* Not possible to lock all cachelines */
-			ret = OCF_LOCK_NOT_ACQUIRED;
-			break;
-		}
-	}
-
-	/* Check if request is locked */
-	if (ret == OCF_LOCK_NOT_ACQUIRED) {
-		/* Request is not locked, discard acquired locks */
-		for (; i >= 0; i--) {
-			entry = ocf_pio_lock_get_entry(alock, req, i);
-
-			if (ocf_alock_is_index_locked(alock, req, i)) {
-				ocf_alock_unlock_one_wr(alock, entry);
-				ocf_alock_mark_index_locked(alock, req, i, false);
-			}
-		}
-	}
+	if (ocf_alock_trylock_entry_wr(alock, entry))
+		ocf_alock_mark_index_locked(alock, req, id, true);
+	else
+		ret = OCF_LOCK_NOT_ACQUIRED;
 
 	return ret;
 }
@@ -58,28 +31,16 @@ static int ocf_pio_lock_fast(struct ocf_alock *alock,
 static int ocf_pio_lock_slow(struct ocf_alock *alock,
 		struct ocf_request *req, int rw, ocf_req_async_lock_cb cmpl)
 {
-	int32_t i;
-	ocf_cache_line_t entry;
+	int32_t id = 0;
+	ocf_cache_line_t entry = req->byte_position;
 	int ret = 0;
 	ENV_BUG_ON(rw != OCF_WRITE);
 
-	for (i = 0; i < req->core_line_count; i++) {
-		entry = ocf_pio_lock_get_entry(alock, req, i);
-		ENV_BUG_ON(ocf_alock_is_index_locked(alock, req, i));
+	ENV_BUG_ON(ocf_alock_is_index_locked(alock, req, id));
 
-		if (!ocf_alock_lock_one_wr(alock, entry, cmpl, req, i)) {
-			/* lock not acquired and not added to wait list */
-			ret = -OCF_ERR_NO_MEM;
-			goto err;
-		}
-	}
-
-	return ret;
-
-err:
-	for (; i >= 0; i--) {
-		entry = ocf_pio_lock_get_entry(alock, req, i);
-		ocf_alock_waitlist_remove_entry(alock, req, i, entry, OCF_WRITE);
+	if (!ocf_alock_lock_one_wr(alock, entry, cmpl, req, id)) {
+		/* lock not acquired and not added to wait list */
+		ret = -OCF_ERR_NO_MEM;
 	}
 
 	return ret;
@@ -90,30 +51,23 @@ static struct ocf_alock_lock_cbs ocf_pio_conc_cbs = {
 		.lock_entries_slow = ocf_pio_lock_slow
 };
 
-int ocf_pio_async_lock(struct ocf_alock *alock,
-		struct ocf_req_async_lock_cb *req,
+int ocf_pio_async_lock(struct ocf_alock *alock, struct ocf_request *req,
 		ocf_req_async_lock_cb cmpl)
 {
 	return ocf_alock_lock_wr(alock, req, cmpl);
 }
 
-void ocf_pio_async_unlock(struct ocf_alock *alock,
-		struct ocf_req_async_lock_cb *req)
+void ocf_pio_async_unlock(struct ocf_alock *alock, struct ocf_request *req)
 {
-	ocf_cache_line_t entry;
-	int i;
+	ocf_cache_line_t entry = req->byte_position;
+	int id = 0;
 
-	for (i = 0; i < req->core_line_count; i++) {
-		if (!ocf_alock_is_index_locked(alock, req, i))
-			continue;
+	if (!ocf_alock_is_index_locked(alock, req, id))
+		return;
 
-		entry = ocf_pio_lock_get_entry(alock, req, i);
+	ocf_alock_unlock_one_wr(alock, entry);
 
-		ocf_alock_unlock_one_wr(alock, entry);
-		ocf_alock_mark_index_locked(alock, req, i, false);
-	}
-
-	m_req->alock_status = 0;
+	ocf_alock_mark_index_locked(alock, req, id, false);
 }
 
 #define ALLOCATOR_NAME_FMT "ocf_%s_pio_conc"
