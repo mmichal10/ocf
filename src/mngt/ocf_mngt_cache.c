@@ -2012,10 +2012,16 @@ static void _ocf_mngt_bind_init_attached_structures(ocf_pipeline_t pipeline,
 {
 	struct ocf_cache_attach_context *context = priv;
 	ocf_cache_t cache = context->cache;
+	struct ocf_metadata_ctrl *ctrl = cache->metadata.priv;
+	enum ocf_metadata_segment_id seg = metadata_segment_collision;
+	struct ocf_metadata_raw *raw = &(ctrl->raw_desc[seg]);
+	int result;
 
 	init_attached_data_structures_recovery(cache, false);
 
-	ocf_pipeline_next(context->pipeline);
+	result = ocf_pio_concurrency_init(&cache->pio, raw->ssd_pages, cache);
+
+	OCF_PL_NEXT_ON_SUCCESS_RET(context->pipeline, result);
 }
 
 static void _ocf_mngt_bind_recovery_unsafe(ocf_pipeline_t pipeline,
@@ -2919,6 +2925,8 @@ static void _ocf_mngt_cache_activate_complete(ocf_cache_t cache, void *priv1,
 
 	_ocf_mngt_cache_set_active(cache);
 	ocf_cache_log(cache, log_info, "Successfully activated\n");
+
+	ocf_pio_concurrency_deinit(&cache->pio);
 
 	OCF_CMPL_RET(cache, priv2, 0);
 }

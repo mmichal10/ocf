@@ -336,7 +336,7 @@ static void ocf_cache_volume_submit_io(struct ocf_io *io)
 		return;
 	}
 
-	env_atomic_set(&priv->remaining, 2);
+	env_atomic_set(&priv->remaining, 3);
 
 	result = ocf_cache_volume_prepare_vol_io(io, &vol_io);
 	if (result) {

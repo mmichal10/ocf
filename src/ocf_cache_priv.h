@@ -75,6 +75,9 @@ struct ocf_cache {
 
 	struct ocf_metadata metadata;
 
+	//TODO look for a better place for this field
+	struct ocf_alock *pio;
+
 	struct {
 		/* cache get/put counter */
 		struct ocf_refcnt cache __attribute__((aligned(64)));

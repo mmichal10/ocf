@@ -2231,6 +2231,52 @@ static void cleanup_old_mapping(ocf_cache_t cache, ocf_cache_line_t begin,
 	}
 }
 
+static void _passive_req_complete(struct ocf_request *req)
+{
+	struct ocf_request *master;
+	ocf_req_end_t cmpl;
+
+	if (req->master_io_req_type) {
+		master = req;
+	} else {
+		master = req->master_io_req;
+	}
+
+	if (env_atomic_dec_return(&master->master_remaining))
+		return;
+
+	cmpl = master->master_io_req;
+	cmpl(master->data, master->error);
+}
+
+static void _passive_req_free(struct ocf_request *req)
+{
+	if (!req->master_io_req_type) {
+		struct ocf_request *master = req->master_io_req;
+		ocf_req_put(master);
+	}
+
+	//TODO should I secure erase master req data
+	//		as in _ocf_cleaner_dealloc_req()?
+	ocf_req_put(req);
+}
+
+static void _pasive_req_finish(struct ocf_request *req)
+{
+	ocf_pio_async_unlock(alock, req);
+
+	_passive_req_complete(req);
+
+	_passive_req_free(req);
+}
+
+static int passive_io_restart_req(struct ocf_request *req);
+
+static struct ocf_io_if passive_io_restart_if = {
+	.read = passive_io_restart_req,
+	.write = passive_io_restart_req,
+}
+
 int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 {
 	struct ocf_metadata_ctrl *ctrl = cache->metadata.priv;
@@ -2255,6 +2301,7 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 	if (io->addr % PAGE_SIZE || io->bytes % PAGE_SIZE) {
 		ocf_cache_log(cache, log_crit,
 				"Metadata update not aligned to page size!\n");
+		io->end(io, -OCF_ERR_INVAL)
 		return -OCF_ERR_INVAL;
 	}
 
@@ -2270,6 +2317,7 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		uint64_t overlap_page;
 		uint64_t overlap_count;
 		uint32_t md_page;
+		struct ocf_request *master, *req, *tmp;
 
 		if (overlap_start >= overlap_end)
 			continue;
@@ -2277,13 +2325,13 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		overlap_page = overlap_start - raw_start_page;
 		overlap_count = overlap_end - overlap_start;
 
-		struct ocf_request *master, *req;
-
 		master = env_mpool_new(req_allocator, 0);
-		if (!master)
+		if (!master) {
+			io->end(io, -OCF_ERR_NO_MEM)
 			return -OCF_ERR_NO_MEM;
+		}
 
-		req->master_io_req_type = true;
+		master->master_io_req_type = true;
 		master->io_queue = queue;
 		master->info.internal = true;
 		master->io_if = &passive_io_restart_if;
@@ -2292,9 +2340,10 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		master->master_io_req = cmpl_fn;
 		master->cache = cache;
 		master->byte_position = seg;
+		INIT_LIST_HEAD(&master->list)
 
-		env_atomic_set(&master->ref_count, 2);
-		env_atomic_set(&master->master_remaining, 1);
+		ocf_req_get(master);
+		env_atomic_set(&master->master_remaining, 2);
 
 		for (io_page = 0, md_page = overlap_start; md_page < overlap_end;
 				md_page++, io_page++) {
@@ -2302,6 +2351,7 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 			if (!req)
 				goto err;
 
+			req->master_io_req_type = false;
 			ocf_req_get(master);
 			req->master_io_req = master;
 			env_atomic_inc(&master->master_remaining);
@@ -2309,41 +2359,37 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 			req->byte_position = md_page;
 			req->core_line_first = io_page;
 
+			// To avoid memory allocation one of the existing fileds is reused
+			req->alock_status = (uint8_t*)&req->part_id;
+
+			INIT_LIST_HEAD(&req->list);
+			list_add_tail(&req->list, &master->list);
+		}
+
+		list_for_each_entry_safe(req, tmp, &master->list, list) {
+			list_del(req);
 			passive_io_restart_req(req);
 		}
 
-		env_atomic_dec_return(&master->ref_count);
-		env_atomic_dec_return(&master->master_remaining);
+		_passive_req_complete(master);
+		ocf_req_put(master);
 
-/*
-		if (seg == metadata_segment_collision) {
-			* The collision is not updated yet but the range of affected
-			   cachelines is already known. Remove the old mapping related info
-			   from the metadata *
-			* The range of cachelines with updated collision section *
-			cache_line_range_start = overlap_page * raw->entries_in_page;
-			cache_line_range_end = cache_line_range_start +
-				raw->entries_in_page * overlap_count;
+		continue;
 
-			cleanup_old_mapping(cache, cache_line_range_start,
-					cache_line_range_end);
+err:
+		list_for_each_entry_safe(req, tmp, &master->list, list) {
+			list_del(req);
+			ocf_req_put(req);
 		}
 
-		ctx_data_seek(cache->owner, data, ctx_data_seek_begin,
-				PAGES_TO_BYTES(overlap_start_data));
-		ocf_metadata_raw_update(cache, raw, data, overlap_page, overlap_count);
+		ocf_req_put(master);
 
-		if (seg != metadata_segment_collision)
-			continue;
-
-		update_list_segment(cache, cache_line_range_start,
-				cache_line_range_end);
+		io->end(io, -OCF_ERR_NO_MEM);
+		return 0;
 	}
-*/
-
-
 
 	return 0;
+
 }
 
 static void passive_io_do(struct ocf_request *req)
@@ -2386,7 +2432,7 @@ static int passive_io_restart_req(struct ocf_request *req)
 {
 	int lock;
 
-	lock = ocf_pio_async_lock(req);
+	lock = ocf_pio_async_lock(req->cache->pio, passive_io_do);
 	if (lock < 0) {
 		//TODO pass error to cmpl
 		return 0;
@@ -2398,54 +2444,3 @@ static int passive_io_restart_req(struct ocf_request *req)
 	return 0;
 }
 
-static struct ocf_io_if passive_io_restart_if = {
-	.read = passive_io_restart_req,
-	.write = passive_io_restart_req,
-}
-
-static int passive_io_update_async(struct ocf_io *io, void *cmpl_fn)
-{
-	struct ocf_request *master;
-	struct ocf_request *req;
-	struct env_mpool *req_allocator	= cache->owner->resources.req;
-	int i;
-
-	if (count == 0)
-		return 0;
-
-	master = env_mpool_new(req_allocator, 0);
-	if (!master)
-		return -OCF_ERR_NO_MEM;
-
-	req->master_io_req_type = true;
-	master->io_queue = queue;
-	master->info.internal = true;
-	master->io_if = &passive_io_restart_if;
-	master->rw = OCF_WRITE;
-	master->data = io;
-	master->master_io_req = cmpl_fn;
-
-	env_atomic_set(&master->ref_count, 2);
-	env_atomic_set(&master->master_remaining, 1);
-
-	for (i = 0; i < count; i++) {
-		req = env_mpool_new(req_allocator, 0);
-		if (!req)
-			goto err;
-
-		ocf_req_get(master);
-		req->master_io_req = master;
-		env_atomic_inc(&master->master_remaining);
-
-		req->byte_position = i;
-
-		passive_io_restart_req(req);
-	}
-
-	env_atomic_dec_return(&master->ref_count);
-	env_atomic_dec_return(&master->master_remaining);
-
-err:
-	cmpl_fn(-OCF_ERR_NO_MEM);
-	return 1;
-}
