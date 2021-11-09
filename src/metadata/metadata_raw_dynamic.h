@@ -58,7 +58,7 @@ void *raw_dynamic_access(ocf_cache_t cache,
  */
 int raw_dynamic_update(ocf_cache_t cache,
 		struct ocf_metadata_raw *raw, ctx_data_t *data,
-		uint64_t page, uint64_t count);
+		uint64_t page, uint32_t offset);
 
 /*
  * RAW DYNAMIC - Load all metadata of this RAW metadata container

@@ -126,7 +126,7 @@ struct raw_iface {
 			uint32_t entry);
 
 	int (*update)(ocf_cache_t cache, struct ocf_metadata_raw *raw,
-			ctx_data_t *data, uint64_t page, uint64_t count);
+			ctx_data_t *data, uint64_t page, uint32_t offset);
 
 	void (*load_all)(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 			ocf_metadata_end_t cmpl, void *priv);
@@ -257,9 +257,9 @@ static inline const void *ocf_metadata_raw_rd_access( ocf_cache_t cache,
  */
 static inline int ocf_metadata_raw_update(ocf_cache_t cache,
 		struct ocf_metadata_raw *raw, ctx_data_t *data,
-		uint64_t page, uint64_t count)
+		uint64_t page, uint32_t offset)
 {
-	return raw->iface->update(cache, raw, data, page, count);
+	return raw->iface->update(cache, raw, data, page, offset);
 }
 
 /**

@@ -2235,13 +2235,14 @@ static void cleanup_old_mapping(ocf_cache_t cache, ocf_cache_line_t begin,
 static void _put_master_passive_req(struct ocf_request *master)
 {
 	struct ocf_io *io;
+	ocf_end_io_t io_cmpl = (ocf_end_io_t)master->master_io_req;
 
 	if (env_atomic_dec_return(&master->master_remaining))
 		return;
 
 	io = (struct ocf_io*)master->data;
 
-	io->end(io, master->error);
+	io_cmpl(io, master->error);
 
 	//TODO should IO securly erase master->data first? It has a pointer to IO
 
@@ -2255,7 +2256,8 @@ static struct ocf_io_if passive_io_restart_if = {
 	.write = passive_io_start_req,
 };
 
-int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
+int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io,
+		ocf_end_io_t io_cmpl)
 {
 	struct ocf_metadata_ctrl *ctrl = cache->metadata.priv;
 	struct ocf_request *master, *req, *tmp;
@@ -2269,17 +2271,24 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		metadata_segment_collision,
 	};
 	int i;
+	bool no_io_sent = true;
 
-	if (io->dir == OCF_READ)
-		return 0;
+	//ocf_cache_log(cache, log_crit, "\n\n\nPassive metadata update\n\n\nxd");
 
-	if (io_start_page >= ctrl->count_pages)
+	if (io->dir == OCF_READ) {
+		io_cmpl(io, 0);
 		return 0;
+	}
+
+	if (io_start_page >= ctrl->count_pages) {
+		io_cmpl(io, 0);
+		return 0;
+	}
 
 	if (io->addr % PAGE_SIZE || io->bytes % PAGE_SIZE) {
 		ocf_cache_log(cache, log_crit,
 				"Metadata update not aligned to page size!\n");
-		io->end(io, -OCF_ERR_INVAL);
+		io_cmpl(io, -OCF_ERR_INVAL);
 		return -OCF_ERR_INVAL;
 	}
 
@@ -2290,16 +2299,25 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		uint64_t raw_end_page = raw_start_page + raw->ssd_pages;
 		uint64_t overlap_start = OCF_MAX(io_start_page, raw_start_page);
 		uint64_t overlap_end = OCF_MIN(io_end_page, raw_end_page);
+		uint64_t overlap_start_data = overlap_start - io_start_page;
 		uint32_t md_page, io_page;
 
 		if (overlap_start >= overlap_end)
 			continue;
 
-		master = env_mpool_new(cache->owner->resources.req, 0);
+		if (!ocf_refcnt_inc(&cache->refcnt.metadata)) {
+			ENV_BUG_ON(io->io_queue == cache->mngt_queue);
+			ocf_io_end(io, -OCF_ERR_IO);
+			return -OCF_ERR_IO;
+		}
+
+		master = env_mpool_new(cache->owner->resources.req, 1);
 		if (!master) {
-			io->end(io, -OCF_ERR_NO_MEM);
+			io_cmpl(io, -OCF_ERR_NO_MEM);
 			return 0;
 		}
+
+		no_io_sent = false;
 
 		master->master_io_req_type = true;
 		master->io_queue = io->io_queue;;
@@ -2307,7 +2325,7 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		master->io_if = &passive_io_restart_if;
 		master->rw = OCF_WRITE;
 		master->data = io;
-		master->master_io_req = NULL;
+		master->master_io_req = io_cmpl;
 		master->cache = cache;
 		master->byte_position = seg;
 		INIT_LIST_HEAD(&master->list)
@@ -2315,7 +2333,15 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		ocf_req_get(master);
 		env_atomic_set(&master->master_remaining, 1);
 
-		for (io_page = 0, md_page = overlap_start; md_page < overlap_end;
+		/*
+		ocf_cache_log(cache, log_crit, "Raw pages offset %lu, raw pages %lu\n",
+				raw->ssd_pages_offset, raw->ssd_pages);
+		ocf_cache_log(cache, log_crit, "Overlap start %lu, overlap end %lu\n",
+				overlap_start, overlap_end);
+				*/
+
+		for (io_page = overlap_start_data, md_page = overlap_start;
+				md_page < overlap_end;
 				md_page++, io_page++) {
 			req = env_mpool_new(cache->owner->resources.req, 1);
 			if (!req) {
@@ -2328,11 +2354,18 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 			env_atomic_inc(&master->master_remaining);
 			//TODO is this really required?
 			env_atomic_set(&req->lock_remaining, 0);
-			req->io_queue = io->io_queue;;
+			req->io_queue = io->io_queue;
+
+			req->data = env_vmalloc(PAGE_SIZE);
+			ENV_BUG_ON(!req->data);
 
 			req->byte_position = md_page;
 			req->core_line_first = io_page;
 			req->core_line_count = 1;
+			/*
+			ocf_cache_log(cache, log_crit, "Alloc request. Update segment %u, "
+					"page %u", seg, md_page);
+					*/
 
 			INIT_LIST_HEAD(&req->list);
 			list_add_tail(&req->list, &master->list);
@@ -2347,9 +2380,13 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io)
 		ocf_req_put(master);
 	}
 
+	if (no_io_sent)
+		io_cmpl(io, 0);
+
 	return 0;
 
 err:
+	ENV_BUG();
 	list_for_each_entry_safe(req, tmp, &master->list, list) {
 		list_del(&req->list);
 		ocf_req_put(req);
@@ -2375,6 +2412,13 @@ static void passive_io_do(struct ocf_request *req)
 	uint32_t md_page = req->byte_position;
 	uint32_t io_page = req->core_line_first;
 
+	/*
+	ocf_cache_log(cache, log_crit, "Passive do seg %u, ssd_pages %lu ssd_pages_offset %lu\n",
+			seg, raw->ssd_pages, raw->ssd_pages_offset);
+	ocf_cache_log(cache, log_crit, "Passive do seg %u, md_page %u, io_page %u\n",
+			seg, md_page, io_page);
+			*/
+
 	if (seg == metadata_segment_collision) {
 		/* The collision is not updated yet but the range of affected
 		   cachelines is already known. Remove the old mapping related info
@@ -2387,9 +2431,11 @@ static void passive_io_do(struct ocf_request *req)
 				cache_line_range_end);
 	}
 
-	ctx_data_seek(cache->owner, data, ctx_data_seek_begin,
-			PAGES_TO_BYTES(md_page));
-	ocf_metadata_raw_update(cache, raw, data + io_page * PAGE_SIZE, md_page, 1);
+	ocf_metadata_raw_update(cache,
+			raw,
+			data,
+			md_page - raw->ssd_pages_offset,
+			io_page * PAGE_SIZE);
 
 	if (seg != metadata_segment_collision)
 		goto cmpl;
@@ -2406,13 +2452,13 @@ static int passive_io_start_req(struct ocf_request *req)
 {
 	int lock;
 	struct ocf_request *master = req->master_io_req;
-	enum ocf_metadata_segment_id seg = master->byte_position;
+	//enum ocf_metadata_segment_id seg = master->byte_position;
 
 	//TODO just an workaround to avoid locking different MD sections
-	if (seg != metadata_segment_collision) {
+	//if (seg != metadata_segment_collision) {
 		passive_io_do(req);
 		return 0;
-	}
+	//}
 
 	lock = ocf_pio_async_lock(req->cache->pio, req, passive_io_do);
 	if (lock < 0) {

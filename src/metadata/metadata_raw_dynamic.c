@@ -308,10 +308,61 @@ static int raw_dynamic_update_pages(ocf_cache_t cache,
 
 int raw_dynamic_update(ocf_cache_t cache,
 		struct ocf_metadata_raw *raw, ctx_data_t *data,
-		uint64_t page, uint64_t count)
+		uint64_t page, uint32_t offset)
+{
+	struct _raw_ctrl *ctrl = (struct _raw_ctrl *)raw->priv;
+	int result = 0;
+	int cmp;
+	uint8_t *buffer = NULL, *zpage;
+
+	zpage = env_vzalloc(PAGE_SIZE);
+	if (!zpage)
+		return -OCF_ERR_NO_MEM;
+
+	buffer = env_secure_alloc(PAGE_SIZE);
+	if (!buffer) {
+		env_vfree(zpage);
+		return -OCF_ERR_NO_MEM;
+	}
+
+	ctx_data_rd_check_offset(cache->owner, buffer, data, PAGE_SIZE, offset);
+
+	result = env_memcmp(zpage, PAGE_SIZE, buffer, PAGE_SIZE, &cmp);
+	if (result < 0)
+		return result;
+
+	/* When page is zero set, no need to allocate space for it */
+	if (cmp == 0) {
+		if (ctrl->pages[page]) {
+			env_secure_free(ctrl->pages[page],
+					PAGE_SIZE);
+			ctrl->pages[page] = NULL;
+			env_atomic_dec(&ctrl->count);
+		}
+		env_secure_free(buffer, PAGE_SIZE);
+		return 0;
+	}
+
+	if (ctrl->pages[page])
+		env_secure_free(ctrl->pages[page], PAGE_SIZE);
+	ctrl->pages[page] = buffer;
+
+	env_atomic_inc(&ctrl->count);
+
+	env_vfree(zpage);
+
+	return 0;
+
+}
+
+/*
+int raw_dynamic_update(ocf_cache_t cache,
+		struct ocf_metadata_raw *raw, ctx_data_t *data,
+		uint64_t page, uint32_t offset)
 {
 	uint8_t *buffer = NULL, *zpage;
 	int result;
+	uint64_t count = 1;
 
 	zpage = env_vzalloc(PAGE_SIZE);
 	if (!zpage)
@@ -327,6 +378,7 @@ int raw_dynamic_update(ocf_cache_t cache,
 
 	return result;
 }
+*/
 
 /*
 * RAM DYNAMIC Implementation - Load all

@@ -96,10 +96,24 @@ static inline uint32_t ctx_data_rd(ocf_ctx_t ctx, void *dst,
 	return ctx->ops->data.read(dst, src, size);
 }
 
+static inline uint32_t ctx_data_rd_offset(ocf_ctx_t ctx, void *dst,
+		ctx_data_t *src, uint32_t size, uint32_t offset)
+{
+	return ctx->ops->data.read_offset(dst, src, size, offset);
+}
+
 static inline uint32_t ctx_data_wr(ocf_ctx_t ctx, ctx_data_t *dst,
 		const void *src, uint32_t size)
 {
 	return ctx->ops->data.write(dst, src, size);
+}
+
+static inline void ctx_data_rd_check_offset(ocf_ctx_t ctx, void *dst,
+		ctx_data_t *src, uint32_t size, uint32_t offset)
+{
+	uint32_t read = ctx_data_rd_offset(ctx, dst, src, size, offset);
+
+	ENV_BUG_ON(read != size);
 }
 
 static inline void ctx_data_rd_check(ocf_ctx_t ctx, void *dst,

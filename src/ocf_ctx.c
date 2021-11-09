@@ -161,6 +161,7 @@ static void check_ops_provided(const struct ocf_ctx_ops *ops)
 	ENV_BUG_ON(!ops->data.mlock);
 	ENV_BUG_ON(!ops->data.munlock);
 	ENV_BUG_ON(!ops->data.read);
+	ENV_BUG_ON(!ops->data.read_offset);
 	ENV_BUG_ON(!ops->data.write);
 	ENV_BUG_ON(!ops->data.zero);
 	ENV_BUG_ON(!ops->data.seek);

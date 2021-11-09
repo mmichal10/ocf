@@ -387,6 +387,8 @@ static void _ocf_mngt_load_add_cores(ocf_pipeline_t pipeline,
 	/* Count value will be re-calculated on the basis of 'valid' flag */
 	cache->conf_meta->core_count = 0;
 
+	printf("Scan corepool\n");
+
 	/* Check in metadata which cores were saved in cache metadata */
 	for_each_core_metadata(cache, core, core_id) {
 		struct ocf_metadata_uuid *muuid;
@@ -413,6 +415,7 @@ static void _ocf_mngt_load_add_cores(ocf_pipeline_t pipeline,
 			 * Attach bottom device to core structure
 			 * in cache
 			 */
+			printf("Core %hu tvolume\n", core_id);
 			ocf_volume_move(&core->volume, tvolume);
 			ocf_mngt_core_pool_remove(cache->owner, tvolume);
 
@@ -423,17 +426,20 @@ static void _ocf_mngt_load_add_cores(ocf_pipeline_t pipeline,
 		} else if (context->cfg.open_cores) {
 			ret = ocf_volume_open(&core->volume, NULL);
 			if (ret == -OCF_ERR_NOT_OPEN_EXC) {
+				printf("Core %hu cant open excl\n", core_id);
 				ocf_cache_log(cache, log_warn,
 						"Cannot open core %u. "
 						"Cache is busy", core_id);
 			} else if (ret) {
+				printf("Core %hu cant open \n", core_id);
 				ocf_cache_log(cache, log_warn,
 						"Cannot open core %u", core_id);
 			} else {
+				printf("Core %hu opened \n", core_id);
 				core->opened = true;
 			}
-		}
 
+		}
 		env_bit_set(core_id, cache->conf_meta->valid_core_bitmap);
 		core->added = true;
 		cache->conf_meta->core_count++;

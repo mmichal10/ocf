@@ -70,6 +70,18 @@ struct ocf_data_ops {
 	 *
 	 * @return Number of read bytes
 	 */
+	uint32_t (*read_offset)(void *dst, ctx_data_t *src, uint32_t size,
+			uint32_t offset);
+
+	/**
+	 * @brief Read from environment data buffer into raw data buffer
+	 *
+	 * @param[in,out] dst Destination raw memory buffer
+	 * @param[in] src Source context data buffer
+	 * @param[in] size Number of bytes to be read
+	 *
+	 * @return Number of read bytes
+	 */
 	uint32_t (*read)(void *dst, ctx_data_t *src, uint32_t size);
 
 	/**

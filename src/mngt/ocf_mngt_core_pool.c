@@ -34,20 +34,25 @@ int ocf_mngt_core_pool_add(ocf_ctx_t ctx, ocf_uuid_t uuid, uint8_t type)
 
 	OCF_CHECK_NULL(ctx);
 
+	printf("Corepool add\n");
+
 	volume_type = ocf_ctx_get_volume_type(ctx, type);
 	if (!volume_type)
 		return -OCF_ERR_INVAL;
 
+	printf("Corepool add vol create\n");
 	result = ocf_volume_create(&volume, volume_type, uuid);
 	if (result)
 		return result;
 
+	printf("Corepool add vol open\n");
 	result = ocf_volume_open(volume, NULL);
 	if (result) {
 		ocf_volume_deinit(volume);
 		return result;
 	}
 
+	printf("Corepool added \n");
 	env_rmutex_lock(&ctx->lock);
 	list_add(&volume->core_pool_item, &ctx->core_pool.core_pool_head);
 	ctx->core_pool.core_pool_count++;
@@ -86,8 +91,11 @@ ocf_volume_t ocf_mngt_core_pool_lookup(ocf_ctx_t ctx, ocf_uuid_t uuid,
 	OCF_CHECK_NULL(uuid);
 	OCF_CHECK_NULL(uuid->data);
 
+	printf("Corepool lookup\n");
+
 	list_for_each_entry(svolume, &ctx->core_pool.core_pool_head,
 			core_pool_item) {
+		printf("volume %s\n", (char*)svolume->uuid.data);
 		if (svolume->type != type)
 			continue;
 

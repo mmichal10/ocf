@@ -88,6 +88,11 @@ struct ocf_request *ocf_req_new(ocf_queue_t queue, ocf_core_t core,
 		core_line_count = 1;
 	}
 
+	printf("%s\n", ocf_cache_get_name(cache));
+	printf("1\n%p\n", cache);
+	printf("2\n%p\n", cache->owner);
+	printf("3\n%p\n", &cache->owner->resources);
+	printf("4\n%p\n", cache->owner->resources.req);
 	req = env_mpool_new(cache->owner->resources.req, core_line_count);
 	if (!req) {
 		map_allocated = false;

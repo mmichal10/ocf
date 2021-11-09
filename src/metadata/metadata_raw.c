@@ -191,7 +191,6 @@ static void *_raw_ram_access(ocf_cache_t cache,
 static int _raw_ram_drain_page(ocf_cache_t cache,
 		struct ocf_metadata_raw *raw, ctx_data_t *data, uint32_t page)
 {
-
 	uint32_t size = raw->entry_size * raw->entries_in_page;
 	ocf_cache_line_t line;
 
@@ -214,14 +213,24 @@ static int _raw_ram_drain_page(ocf_cache_t cache,
  */
 static int _raw_ram_update(ocf_cache_t cache,
 		struct ocf_metadata_raw *raw, ctx_data_t *data,
-		uint64_t page, uint64_t count)
+		uint64_t page, uint32_t offset)
 {
-	uint64_t i;
+	uint32_t size = raw->entry_size * raw->entries_in_page;
+	ocf_cache_line_t line;
 
-	for (i = 0; i < count; i++)
-		_raw_ram_drain_page(cache, raw, data, page + i);
+	//TODO fix bugons
+	ENV_BUG_ON(page > raw->ssd_pages);
+	ENV_BUG_ON(size > PAGE_SIZE);
+
+	line = page * raw->entries_in_page;
+
+	OCF_DEBUG_PARAM(cache, "Line = %u, Page = %u", line, page);
+
+	ctx_data_rd_check_offset(cache->owner, _RAW_RAM_ADDR(raw, line), data,
+			size, offset);
 
 	return 0;
+
 }
 
 struct _raw_ram_load_all_context {

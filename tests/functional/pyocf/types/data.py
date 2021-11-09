@@ -35,6 +35,7 @@ class DataOps(Structure):
     MLOCK = CFUNCTYPE(c_int, c_void_p)
     MUNLOCK = CFUNCTYPE(None, c_void_p)
     READ = CFUNCTYPE(c_uint32, c_void_p, c_void_p, c_uint32)
+    READ_OFFSET = CFUNCTYPE(c_uint32, c_void_p, c_void_p, c_uint32, c_uint32)
     WRITE = CFUNCTYPE(c_uint32, c_void_p, c_void_p, c_uint32)
     ZERO = CFUNCTYPE(c_uint32, c_void_p, c_uint32)
     SEEK = CFUNCTYPE(c_uint32, c_void_p, c_uint32, c_uint32)
@@ -46,6 +47,7 @@ class DataOps(Structure):
         ("_free", FREE),
         ("_mlock", MLOCK),
         ("_munlock", MUNLOCK),
+        ("_read_offset", READ_OFFSET),
         ("_read", READ),
         ("_write", WRITE),
         ("_zero", ZERO),
@@ -84,6 +86,7 @@ class Data:
             _mlock=cls._mlock,
             _munlock=cls._munlock,
             _read=cls._read,
+            _read_offset=cls._read_offset,
             _write=cls._write,
             _zero=cls._zero,
             _seek=cls._seek,
@@ -144,6 +147,11 @@ class Data:
         return Data.get_instance(src).read(dst, size)
 
     @staticmethod
+    @DataOps.READ_OFFSET
+    def _read_offset(dst, src, size, offset):
+        return Data.get_instance(src).read_offset(dst, size, offset)
+
+    @staticmethod
     @DataOps.WRITE
     def _write(dst, src, size):
         return Data.get_instance(dst).write(src, size)
@@ -175,6 +183,13 @@ class Data:
         memmove(dst, self.handle.value + self.position, to_read)
 
         self.position += to_read
+        return to_read
+
+    def read_offset(self, dst, size, offset):
+        to_read = min(self.size, size)
+#print(f"size {size} offset {offset} size {size} to_Read {to_read}")
+        memmove(dst, self.handle.value + offset, to_read)
+
         return to_read
 
     def write(self, src, size):

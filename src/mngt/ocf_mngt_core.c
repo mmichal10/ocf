@@ -506,6 +506,8 @@ static void ocf_mngt_cache_add_core_finish(ocf_pipeline_t pipeline,
 	ocf_core_t core = context->core;
 
 	if (error) {
+
+		printf("Faild to add core\n");
 		_ocf_mngt_cache_add_core_handle_error(context);
 
 		if (error == -OCF_ERR_CORE_NOT_AVAIL) {
@@ -516,6 +518,8 @@ static void ocf_mngt_cache_add_core_finish(ocf_pipeline_t pipeline,
 				context->cfg.name);
 		goto out;
 	}
+
+	ocf_cache_log(cache, log_crit, "Core added\n");
 
 	ocf_core_log(core, log_info, "Successfully added\n");
 
