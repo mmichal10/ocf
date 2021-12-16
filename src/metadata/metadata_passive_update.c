@@ -277,7 +277,7 @@ static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 		}
 
 		/* Read new metadata */
-		ctx_data_rd_check(cache->owner, buffer, data, data_size_on_page);
+		//ctx_data_rd_check(cache->owner, buffer, data, data_size_on_page);
 
 		for (j = 0; j < bitmap_size; j++) {
 			const struct ocf_metadata_map *old_mapping, *new_mapping;
@@ -285,6 +285,7 @@ static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 
 			cline = cache_line_range_start + i * raw->entries_in_page + j;
 
+			/*
 			old_mapping = ocf_metadata_raw_rd_access(cache,
 					&(ctrl->raw_desc[metadata_segment_collision]), cline);
 			new_mapping = buffer + j * raw->entry_size;
@@ -294,11 +295,12 @@ static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 			if (unlikely(result))
 				return result;
 
-			/* Mapping hasn't changed */
+			* Mapping hasn't changed *
 			if (!diff) {
 				env_bit_set(j, skip_bitmap);
 				continue;
 			}
+			*/
 
 			/* The cache line has been inavlid, no need to invalidate it */
 			if (ocf_metadata_get_partition_id(cache, cline) == PARTITION_FREELIST)
@@ -312,6 +314,12 @@ static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 				PAGES_TO_BYTES(overlap_start_data+i));
 		ocf_metadata_raw_update(cache, raw, data, overlap_page + i, 1);
 
+		for (j = 0; j < bitmap_size; j++) {
+			cline = cache_line_range_start + i * raw->entries_in_page + j;
+
+			update_list_segment(cache, cline);
+		}
+		/*
 		j = 0;
 		while (j < bitmap_size) {
 			uint32_t len;
@@ -320,7 +328,7 @@ static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 				continue;
 			}
 
-			/* Mapping for at least one cache line need to be updated */
+			* Mapping for at least one cache line need to be updated *
 			for (len = j+64; j < len && j < bitmap_size; j++) {
 				if (env_bit_test(j, skip_bitmap))
 					continue;
@@ -331,6 +339,7 @@ static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 			}
 
 		}
+		*/
 	}
 
 	return 0;
@@ -386,7 +395,7 @@ end:
 	ocf_pio_async_unlock(req->cache->standby.concurrency, req);
 	io_cmpl(io, result);
 	env_allocator_del(cache->standby.allocator, req);
-	return 0;
+	return result;
 }
 
 static struct ocf_io_if passive_io_restart_if = {
@@ -467,7 +476,7 @@ int ocf_metadata_passive_update(ocf_cache_t cache, struct ocf_io *io,
 	}
 
 	if (lock == OCF_LOCK_ACQUIRED)
-		passive_io_resume(req);
+		return passive_io_resume(req);
 
 	return 0;
 }
