@@ -308,10 +308,12 @@ static int raw_dynamic_update_pages(ocf_cache_t cache,
 
 		if (ctrl->pages[page + i])
 			env_secure_free(ctrl->pages[page + i], PAGE_SIZE);
+		else
+			env_atomic_inc(&ctrl->count);
+
 		ctrl->pages[page + i] = *buffer;
 		*buffer = NULL;
 
-		env_atomic_inc(&ctrl->count);
 	}
 
 	return 0;
