@@ -240,16 +240,18 @@ static inline bool end_of_section(ocf_cache_line_t entries_in_page,
 }
 */
 
+#define _RAW_RAM_ADDR(raw, line) \
+	(raw->mem_pool + (((uint64_t)raw->entry_size * (line))))
+
 static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 		void *buffer, ctx_data_t *data, uint64_t overlap_start_data,
 		uint64_t overlap_page, uint64_t overlap_count)
 {
 	ocf_cache_line_t cache_etries = ocf_metadata_collision_table_entries(cache);
 	ocf_cache_line_t cache_line_count, cache_line_range_start;
-	struct ocf_metadata_ctrl *ctrl = cache->metadata.priv;
 	size_t data_size_on_page;
 	int i, j;
-	int result;
+	//int result;
 
 	/* The range of cachelines with potentially updated collision section */
 	cache_line_range_start = overlap_page * raw->entries_in_page;
@@ -280,14 +282,21 @@ static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 		//ctx_data_rd_check(cache->owner, buffer, data, data_size_on_page);
 
 		for (j = 0; j < bitmap_size; j++) {
-			const struct ocf_metadata_map *old_mapping, *new_mapping;
-			int diff;
+			const struct ocf_metadata_map *old_mapping;//, *new_mapping;
+			//int diff;
 
 			cline = cache_line_range_start + i * raw->entries_in_page + j;
 
+			__builtin_prefetch(_RAW_RAM_ADDR(raw, cline + 5), 0, 3);
+			__builtin_prefetch(_RAW_RAM_ADDR(raw, cline + 5), 1, 3);
+
+			/* The cache line has been inavlid, no need to invalidate it */
+			if (ocf_metadata_get_partition_id(cache, cline) == PARTITION_FREELIST)
+				continue;
+
+
+			old_mapping = ocf_metadata_raw_rd_access(cache, raw, cline);
 			/*
-			old_mapping = ocf_metadata_raw_rd_access(cache,
-					&(ctrl->raw_desc[metadata_segment_collision]), cline);
 			new_mapping = buffer + j * raw->entry_size;
 
 			result = env_memcmp(old_mapping, raw->entry_size,
@@ -301,10 +310,6 @@ static int update_collision(ocf_cache_t cache, struct ocf_metadata_raw *raw,
 				continue;
 			}
 			*/
-
-			/* The cache line has been inavlid, no need to invalidate it */
-			if (ocf_metadata_get_partition_id(cache, cline) == PARTITION_FREELIST)
-				continue;
 
 			cleanup_old_mapping(cache, cline, old_mapping->core_line,
 					old_mapping->core_id);
