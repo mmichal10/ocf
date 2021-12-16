@@ -381,7 +381,7 @@ static void ocf_cache_volume_submit_io(struct ocf_io *io)
 				"Metadata update error (error=%d)!\n", result);
 	}
 
-	ocf_cache_io_complete(io, 0);
+	ocf_cache_io_complete(io, result);
 }
 
 
