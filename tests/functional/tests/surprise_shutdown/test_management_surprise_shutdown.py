@@ -15,6 +15,8 @@ from pyocf.types.cache import (
     AcpParams,
     NhitParams,
 )
+
+from pyocf.types.ctx import OcfCtx
 from pyocf.types.data import Data
 from pyocf.types.core import Core
 from pyocf.types.volume import ErrorDevice, RamVolume, VOLUME_POISON
@@ -698,3 +700,63 @@ def test_surprise_shutdown_set_io_class_config(pyocf_ctx):
         assert curr_ioclass == old_ioclass or curr_ioclass == new_ioclass
 
     mngmt_op_surprise_shutdown_test(pyocf_ctx, test, prepare, check)
+
+import pdb
+
+@pytest.mark.security
+@pytest.mark.long
+def test_surprise_shutdown_standby_init_clean(pyocf_ctx):
+    error_triggered = True
+    error_io_seq_no = 0
+
+    while error_triggered:
+        # Start cache device without error injection
+        error_io = {IoDir.WRITE: error_io_seq_no}
+        device = ErrorDevice(
+            mngmt_op_surprise_shutdown_test_cache_size, error_seq_no=error_io, armed=True
+        )
+
+        # call tested management function
+        status = 0
+
+        cache = Cache(owner=OcfCtx.get_default())
+        cache.start_cache()
+
+        try:
+            cache.standby_attach(device)
+        except OcfError as ex:
+            status = ex.error_code
+            cache.stop()
+
+        # if error was injected we expect mngmt op error
+        error_triggered = device.error_triggered()
+        assert error_triggered == (status != 0)
+
+        if not error_triggered:
+            # stop cache with error injection still on - expect no error in standby
+            # as no writes go to the disk 
+            cache.stop()
+            break
+
+        # disable error injection and load the cache
+        device.disarm()
+        cache = None
+
+        cache = Cache(owner=OcfCtx.get_default())
+        cache.start_cache()
+
+        with pytest.raises(OcfError) as ex:
+            cache.standby_load(device)
+            assert ex.value.error_code == OcfErrorCode.OCF_ERR_NO_METADATA
+
+        cache.stop()
+
+        # advance error injection point
+        error_io_seq_no += 1
+
+
+@pytest.mark.security
+@pytest.mark.long
+def test_surprise_shutdown_standby_init_force(pyocf_ctx):
+    pass
+
