@@ -701,7 +701,94 @@ def test_surprise_shutdown_set_io_class_config(pyocf_ctx):
 
     mngmt_op_surprise_shutdown_test(pyocf_ctx, test, prepare, check)
 
-import pdb
+
+@pytest.mark.security
+@pytest.mark.long
+def test_standby_load_writes_count(pyocf_ctx):
+    # Prepare a volume with valid metadata
+    device = RamVolume(S.from_MiB(40))
+    cache = Cache.start_on_device(device, cache_mode=CacheMode.WB)
+    cache.stop()
+
+    device.reset_stats()
+
+    cache = Cache(owner=OcfCtx.get_default())
+    cache.start_cache()
+
+    cache.standby_load(device, perform_test=False)
+
+    assert device.get_stats()[IoDir.WRITE] == 0
+
+
+@pytest.mark.security
+@pytest.mark.long
+def test_surprise_shutdown_standby_load(pyocf_ctx):
+    error_triggered = True
+    error_io_seq_no = 0
+
+    while error_triggered:
+        # Start cache device without error injection
+        error_io = {IoDir.WRITE: error_io_seq_no}
+        device = ErrorDevice(
+            mngmt_op_surprise_shutdown_test_cache_size, error_seq_no=error_io, armed=False
+        )
+        core_device = RamVolume(S.from_MiB(10))
+
+        device.disarm()
+        status = 0
+
+        # Add a core device and provide a few dirty blocks
+        cache = Cache.start_on_device(device, cache_mode=CacheMode.WB)
+        core = Core(device=core_device)
+        cache.add_core(core)
+        vol = CoreVolume(core, open=True)
+        ocf_write(vol, cache.get_default_queue(), 0xAA, 0)
+        original_dirty_blocks = cache.get_stats()["usage"]["dirty"]
+        cache.stop()
+
+        # Preapre a passive instance
+        cache = Cache(owner=OcfCtx.get_default())
+        cache.start_cache()
+        cache.standby_load(device)
+        cache.standby_detach()
+
+        device.arm()
+
+        # If the activate failes, cache should be rollbacked into the passive state
+        try:
+            cache.standby_activate(device)
+        except OcfError as ex:
+            status = ex.error_code
+            cache.stop()
+
+        # If error was injected we expect mngmt op error
+        error_triggered = device.error_triggered()
+        assert error_triggered == (status != 0)
+
+        # Activate succeeded but error injection is still enabled
+        if not error_triggered:
+            with pytest.raises(OcfError) as ex:
+                cache.stop()
+
+        # Disable error injection and activate cache
+        device.disarm()
+        cache = None
+
+        cache = Cache(owner=OcfCtx.get_default())
+        cache.start_cache()
+        cache.standby_load(device)
+        cache.standby_detach()
+
+        cache.standby_activate(device)
+
+        assert cache.get_stats()["conf"]["core_count"] == 1
+        assert original_dirty_blocks == cache.get_stats()["usage"]["dirty"]
+
+        cache.stop()
+
+        # advance error injection point
+        error_io_seq_no += 1
+
 
 @pytest.mark.security
 @pytest.mark.long
@@ -734,7 +821,7 @@ def test_surprise_shutdown_standby_init_clean(pyocf_ctx):
 
         if not error_triggered:
             # stop cache with error injection still on - expect no error in standby
-            # as no writes go to the disk 
+            # as no writes go to the disk
             cache.stop()
             break
 
