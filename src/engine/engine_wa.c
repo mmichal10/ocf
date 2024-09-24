@@ -42,6 +42,7 @@ int ocf_write_wa(struct ocf_request *req)
 		ocf_req_clear(req);
 
 		/* MISS, do WI */
+		req->wi_stack.WA = true;
 		ocf_write_wi(req);
 	}
 

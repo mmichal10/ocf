@@ -176,6 +176,8 @@ int ocf_write_wb(struct ocf_request *req)
 		}
 	} else {
 		ocf_req_clear(req);
+		req->wi_stack.WB = true;
+		printk(KERN_ERR "WB fallback to WI\n");
 		ocf_write_wi(req);
 	}
 

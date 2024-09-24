@@ -295,9 +295,16 @@ static inline bool ocf_alock_trylock_entry_rd(struct ocf_alock *alock,
 static inline void ocf_alock_unlock_entry_wr(struct ocf_alock *alock,
 		ocf_cache_line_t entry)
 {
+	int status;
 	env_atomic *access = &alock->access[entry];
 
-	ENV_BUG_ON(env_atomic_read(access) != OCF_CACHE_LINE_ACCESS_WR);
+	status = env_atomic_read(access);
+	if (unlikely(status != OCF_CACHE_LINE_ACCESS_WR)) {
+		printk(KERN_ERR "Unexpected status %d cline %u\n",
+				status, entry);
+		ENV_BUG();
+	}
+
 	env_atomic_set(access, OCF_CACHE_LINE_ACCESS_IDLE);
 }
 

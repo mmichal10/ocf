@@ -455,6 +455,7 @@ int ocf_engine_prepare_clines(struct ocf_request *req)
 
 	/* requests to disabled partitions go in pass-through */
 	if (!ocf_user_part_is_enabled(user_part)) {
+		printk(KERN_ERR "Part is disabled\n");
 		ocf_req_set_mapping_error(req);
 		return -OCF_ERR_NO_LOCK;
 	}
@@ -473,9 +474,10 @@ int ocf_engine_prepare_clines(struct ocf_request *req)
 	mapped = ocf_engine_is_mapped(req);
 	if (mapped) {
 		lock = lock_clines(req);
-		if (lock < 0)
+		if (lock < 0) {
+			printk(KERN_ERR "Failed to acquire lock on mapped\n");
 			ocf_req_set_mapping_error(req);
-		else
+		}else
 			ocf_engine_set_hot(req);
 		ocf_hb_req_prot_unlock_rd(req);
 		return lock;
@@ -485,6 +487,7 @@ int ocf_engine_prepare_clines(struct ocf_request *req)
 	promote = ocf_promotion_req_should_promote(
 			req->cache->promotion_policy, req);
 	if (!promote) {
+		printk(KERN_ERR "Failed to promote\n");
 		ocf_req_set_mapping_error(req);
 		ocf_hb_req_prot_unlock_rd(req);
 		return lock;
@@ -507,6 +510,7 @@ int ocf_engine_prepare_clines(struct ocf_request *req)
 	if (!ocf_req_test_mapping_error(req)) {
 		lock = lock_clines(req);
 		if (lock < 0) {
+			printk(KERN_ERR "Failed to acquire lock on miss\n");
 			/* Mapping succeeded, but we failed to acquire cacheline lock.
 			 * Don't try to evict, just return error to caller */
 			ocf_req_set_mapping_error(req);

@@ -39,6 +39,9 @@ static int _ocf_write_wi_next_pass(struct ocf_request *req)
 	   again with req->wi_second_pass set to indicate that this
 	   is a second pass (core write should be skipped). */
 	req->wi_second_pass = true;
+
+	req->wi_stack.second_pass = true;
+
 	ocf_write_wi(req);
 
 	return 0;
@@ -163,9 +166,9 @@ static void _ocf_write_wi_on_resume(struct ocf_request *req)
 int ocf_write_wi(struct ocf_request *req)
 {
 	int lock = OCF_LOCK_NOT_ACQUIRED;
+	uint32_t mapped_count;
 
 	OCF_DEBUG_TRACE(req->cache);
-
 
 	/* Get OCF request - increase reference counter */
 	ocf_req_get(req);
@@ -181,16 +184,34 @@ int ocf_write_wi(struct ocf_request *req)
 	/* Travers to check if request is mapped fully */
 	ocf_engine_traverse(req);
 
-	if (ocf_engine_mapped_count(req)) {
+	mapped_count = ocf_engine_mapped_count(req);
+	if (mapped_count) {
+
+		printk(KERN_ERR "Hello WI :) WB %u, WT %u, WA %u 2nd pass %u. "
+				"Mapped count %u\n", (uint32_t)req->wi_stack.WB,
+				(uint32_t)req->wi_stack.WT, (uint32_t)req->wi_stack.WA,
+				(uint32_t)req->wi_stack.second_pass, mapped_count);
+
 		/* Some cache line are mapped, lock request for WRITE access */
 		lock = ocf_req_async_lock_wr(
 				ocf_cache_line_concurrency(req->cache),
 				req, _ocf_write_wi_on_resume);
 	} else {
+
+		printk(KERN_ERR "Hello WI :) WB %u, WT %u, WA %u 2nd pass %u. "
+				"Mapped count %u\n", (uint32_t)req->wi_stack.WB,
+				(uint32_t)req->wi_stack.WT, (uint32_t)req->wi_stack.WA,
+				(uint32_t)req->wi_stack.second_pass, 0);
+
 		lock = OCF_LOCK_ACQUIRED;
 	}
 
 	ocf_hb_req_prot_unlock_rd(req); /*- END Metadata READ access----------------*/
+
+	req->wi_stack.WB = 0;
+	req->wi_stack.WT = 0;
+	req->wi_stack.WA = 0;
+	req->wi_stack.second_pass = 0;
 
 	if (lock >= 0) {
 		if (lock == OCF_LOCK_ACQUIRED) {

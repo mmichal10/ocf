@@ -210,6 +210,7 @@ int ocf_write_wt(struct ocf_request *req)
 		}
 	} else {
 		ocf_req_clear(req);
+		req->wi_stack.WT = true;
 		ocf_write_wi(req);
 	}
 

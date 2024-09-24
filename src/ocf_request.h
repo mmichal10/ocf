@@ -180,6 +180,13 @@ struct ocf_request {
 	env_atomic cache_remaining;
 	env_atomic core_remaining;
 
+	struct {
+		uint32_t WB : 1;
+		uint32_t WT : 1;
+		uint32_t WA : 1;
+		uint32_t second_pass : 1;
+	} wi_stack;
+
 	env_atomic ref_count;
 	/*!< Reference usage count, once OCF request reaches zero it
 	 * will be de-initialed. Get/Put method are intended to modify
