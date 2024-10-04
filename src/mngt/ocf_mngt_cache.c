@@ -1521,6 +1521,8 @@ static int _ocf_mngt_cache_start(ocf_ctx_t ctx, ocf_cache_t *cache,
 	result = _ocf_mngt_init_prepare_cache(&params, cfg);
 	if (result) {
 		env_rmutex_unlock(&ctx->lock);
+		ocf_log(ctx, log_err, "Failed to prepare cache %s\n",
+				cfg->name);
 		goto _cache_mngt_init_instance_ERROR;
 	}
 
@@ -1534,6 +1536,8 @@ static int _ocf_mngt_cache_start(ocf_ctx_t ctx, ocf_cache_t *cache,
 	result = ocf_metadata_init(tmp_cache, params.metadata.line_size);
 	if (result) {
 		env_rmutex_unlock(&ctx->lock);
+		ocf_log(ctx, log_err, "Failed to initialize cache %s "
+				"metadata\n", cfg->name);
 		result =  -OCF_ERR_NO_MEM;
 		goto _cache_mngt_init_instance_ERROR;
 	}
@@ -1541,6 +1545,8 @@ static int _ocf_mngt_cache_start(ocf_ctx_t ctx, ocf_cache_t *cache,
 
 	result = ocf_cache_set_name(tmp_cache, cfg->name, OCF_CACHE_NAME_SIZE);
 	if (result) {
+		ocf_log(ctx, log_err, "Failed to set cache %s name\n",
+				cfg->name);
 		env_rmutex_unlock(&ctx->lock);
 		goto _cache_mngt_init_instance_ERROR;
 	}
